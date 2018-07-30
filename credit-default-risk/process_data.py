@@ -12,6 +12,7 @@ ignore_feat = [
     "SK_ID_CURR"
 ]
 
+
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
 
@@ -20,7 +21,8 @@ def read_test():
     return pd.read_csv(folder + "application_test.csv")
 
 
-def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False):
+def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False,
+                 fill_null_columns=False):
     features = data[application_fields].copy()
     categorical_feat_list = []
 
@@ -47,6 +49,8 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
 
         dtype = features[column_name].dtype.name
         if is_numeric_dtype(dtype):
+            if fill_null_columns:
+                features[column_name].fillna(-1, inplace=True)
             continue
 
         categorical_feat_list.append(column_name)
