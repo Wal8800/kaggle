@@ -13,6 +13,7 @@ ignore_feat = [
 ]
 
 _cache_installment_result = None
+_cache_credit_card_result = None
 
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
@@ -33,9 +34,13 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
     if _cache_installment_result is None:
         _cache_installment_result = read_and_process_installment()
 
+    global _cache_credit_card_result
+    if _cache_credit_card_result is None:
+        _cache_credit_card_result = read_and_process_credit_card()
+
     features = features.set_index("SK_ID_CURR")
     features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
-
+    features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
     categorical_feat_list = []
 
     features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
@@ -98,3 +103,36 @@ def read_and_process_installment():
     # print(aggegration.shape)
 
     return aggegration
+
+
+def read_and_process_credit_card():
+    credit_card = pd.read_csv(folder + "credit_card_balance.csv")
+    credit_card["CREDIT_USAGE"] = credit_card["AMT_DRAWINGS_CURRENT"] / credit_card["AMT_CREDIT_LIMIT_ACTUAL"]
+    credit_card["BALANCE_LIMIT_PERCENT"] = credit_card["AMT_BALANCE"] / credit_card["AMT_CREDIT_LIMIT_ACTUAL"]
+    aggs = [
+        "mean",
+        "min",
+        "max",
+        "median"
+    ]
+
+    # note AMT_DRAW_CURRENT = AMT_DRAWINGS_ATM_CURRENT + AMT_DRAWINGS_OTHER_CURRENT + AMT_DRAWINGS_POS_CURRENT
+
+    column_list = [
+        "AMT_BALANCE",
+        "AMT_CREDIT_LIMIT_ACTUAL",
+        "AMT_DRAWINGS_CURRENT",
+        "AMT_TOTAL_RECEIVABLE",
+        "CNT_INSTALMENT_MATURE_CUM",
+        "CNT_DRAWINGS_CURRENT",
+        "SK_DPD",
+        "SK_DPD_DEF"
+    ]
+
+    aggegration = credit_card.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    aggegration.columns = ["_".join(x) for x in aggegration.columns.ravel()]
+
+    return aggegration
+
+def read_and_process_pos_cash():
+    pos_cash = pd.read_csv(folder + "POS_CASH_balance.csv")

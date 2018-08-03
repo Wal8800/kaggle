@@ -7,6 +7,7 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import cross_val_score
 import datetime
+import pprint
 
 
 def create_classifier():
@@ -81,7 +82,8 @@ feature_names = [
 train_data, cate_feats = process_data.process_data(train_data, feature_names, always_label_encode=True)
 test_data, _ = process_data.process_data(test_data_raw, feature_names, always_label_encode=True)
 
-print("Features list: ", list(train_data))
+pp = pprint.PrettyPrinter(width=200, compact=True)
+pp.pprint(list(train_data))
 # scores = cross_val_score(create_classifier(), train_data, train_label, cv=5, scoring='roc_auc')
 # print(scores)
 
