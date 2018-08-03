@@ -13,7 +13,7 @@ def create_classifier():
     return lgb.LGBMClassifier(
         nthread=3,
         n_estimators=5000,
-        learning_rate=0.05,
+        learning_rate=0.01,
         num_leaves=34,
         colsample_bytree=0.9497036,
         subsample=0.8715623,
@@ -65,11 +65,23 @@ feature_names = [
     "AMT_INCOME_TOTAL",
     "AMT_ANNUITY",
     "REGION_RATING_CLIENT_W_CITY",
-    "CODE_GENDER"
+    "CODE_GENDER",
+    "FLAG_OWN_CAR",
+    "FLAG_OWN_REALTY",
+    "NAME_INCOME_TYPE",
+    "NAME_HOUSING_TYPE",
+    "OCCUPATION_TYPE",
+    "ORGANIZATION_TYPE",
+    "NAME_FAMILY_STATUS",
+    "DAYS_ID_PUBLISH",
+    "OWN_CAR_AGE",
+    "SK_ID_CURR"
 ]
 
 train_data, cate_feats = process_data.process_data(train_data, feature_names, always_label_encode=True)
 test_data, _ = process_data.process_data(test_data_raw, feature_names, always_label_encode=True)
+
+print("Features list: ", list(train_data))
 # scores = cross_val_score(create_classifier(), train_data, train_label, cv=5, scoring='roc_auc')
 # print(scores)
 
@@ -124,4 +136,4 @@ fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
 print(fold_importance_df)
 
 create_submission(sub_preds)
-pred_with_full_data()
+# pred_with_full_data()

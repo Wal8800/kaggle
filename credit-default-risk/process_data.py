@@ -12,6 +12,7 @@ ignore_feat = [
     "SK_ID_CURR"
 ]
 
+_cache_installment_result = None
 
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
@@ -21,14 +22,21 @@ def read_test():
     return pd.read_csv(folder + "application_test.csv")
 
 
+def read_bureau():
+    return pd.read_csv(folder + "bureau.csv")
+
+
 def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False,
                  fill_null_columns=False):
     features = data[application_fields].copy()
-    categorical_feat_list = []
+    global _cache_installment_result
+    if _cache_installment_result is None:
+        _cache_installment_result = read_and_process_installment()
 
-    for feat in ignore_feat:
-        if feat in list(features):
-            features.drop(feat, inplace=True)
+    features = features.set_index("SK_ID_CURR")
+    features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
+
+    categorical_feat_list = []
 
     features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
 
@@ -40,6 +48,10 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
     features['CREDIT_TERM'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
     features['DAYS_EMPLOYED_PERCENT'] = features['DAYS_EMPLOYED'] / features['DAYS_BIRTH']
     features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
+
+    for feat in ignore_feat:
+        if feat in list(features):
+            features.drop(feat, inplace=True)
 
     # categorical data into numerical
     for column_name in features:
@@ -65,3 +77,24 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
 
     print("Number of features: {}".format(len(list(features))))
     return features, categorical_feat_list
+
+
+def read_and_process_installment():
+    installments = pd.read_csv(folder + "installments_payments.csv")
+
+    installments["INST_DAYS_DIFF"] = installments["DAYS_INSTALMENT"] - installments["DAYS_ENTRY_PAYMENT"]
+    installments["INST_PAYMENT_DIFF"] = installments["AMT_INSTALMENT"] - installments["AMT_PAYMENT"]
+
+    aggs = [
+        "mean",
+        "min",
+        "max",
+        "median"
+    ]
+
+    aggegration = installments.groupby("SK_ID_CURR")[["INST_DAYS_DIFF", "INST_PAYMENT_DIFF"]].agg(aggs)
+    aggegration.columns = ["_".join(x) for x in aggegration.columns.ravel()]
+    # print(aggegration.head(100))
+    # print(aggegration.shape)
+
+    return aggegration
