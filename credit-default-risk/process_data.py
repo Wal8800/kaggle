@@ -14,6 +14,9 @@ ignore_feat = [
 
 _cache_installment_result = None
 _cache_credit_card_result = None
+_cache_pos_cash_result = None
+_cache_pa_result = None
+
 
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
@@ -30,17 +33,25 @@ def read_bureau():
 def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False,
                  fill_null_columns=False):
     features = data[application_fields].copy()
-    global _cache_installment_result
+    global _cache_installment_result, _cache_credit_card_result, _cache_pos_cash_result, _cache_pa_result
     if _cache_installment_result is None:
         _cache_installment_result = read_and_process_installment()
 
-    global _cache_credit_card_result
     if _cache_credit_card_result is None:
         _cache_credit_card_result = read_and_process_credit_card()
+
+    if _cache_pos_cash_result is None:
+        _cache_pos_cash_result = read_and_process_pos_cash()
+
+    if _cache_pa_result is None:
+        _cache_pa_result = read_and_process_past_app()
 
     features = features.set_index("SK_ID_CURR")
     features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
+    features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
+    features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
+
     categorical_feat_list = []
 
     features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
@@ -98,7 +109,7 @@ def read_and_process_installment():
     ]
 
     aggegration = installments.groupby("SK_ID_CURR")[["INST_DAYS_DIFF", "INST_PAYMENT_DIFF"]].agg(aggs)
-    aggegration.columns = ["_".join(x) for x in aggegration.columns.ravel()]
+    aggegration.columns = ["_".join(("INS",) + x) for x in aggegration.columns.ravel()]
     # print(aggegration.head(100))
     # print(aggegration.shape)
 
@@ -126,13 +137,80 @@ def read_and_process_credit_card():
         "CNT_INSTALMENT_MATURE_CUM",
         "CNT_DRAWINGS_CURRENT",
         "SK_DPD",
-        "SK_DPD_DEF"
+        "SK_DPD_DEF",
+        "CREDIT_USAGE",
+        "BALANCE_LIMIT_PERCENT"
     ]
 
     aggegration = credit_card.groupby("SK_ID_CURR")[column_list].agg(aggs)
-    aggegration.columns = ["_".join(x) for x in aggegration.columns.ravel()]
+    aggegration.columns = ["_".join(("CC",) + x) for x in aggegration.columns.ravel()]
 
     return aggegration
 
+
 def read_and_process_pos_cash():
     pos_cash = pd.read_csv(folder + "POS_CASH_balance.csv")
+    pos_cash["INST_LEFT_PERC"] = pos_cash["CNT_INSTALMENT"] / pos_cash["CNT_INSTALMENT_FUTURE"]
+    aggs = [
+        "mean",
+        "min",
+        "max",
+        "median"
+    ]
+
+    column_list = [
+        "MONTHS_BALANCE",
+        "CNT_INSTALMENT",
+        "CNT_INSTALMENT_FUTURE",
+        "SK_DPD",
+        "SK_DPD_DEF",
+        "INST_LEFT_PERC"
+    ]
+
+    aggegration = pos_cash.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    aggegration.columns = ["_".join(("PSCH",) + x) for x in aggegration.columns.ravel()]
+
+    return aggegration
+
+
+def read_and_process_past_app():
+    past_app = pd.read_csv(folder + "previous_application.csv")
+    past_app["ACT_CREDIT_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_APPLICATION"]
+    past_app["DOWN_PAY_PERC"] = past_app["AMT_DOWN_PAYMENT"] / past_app["AMT_CREDIT"]
+    past_app["CRED_INC_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_ANNUITY"]
+    past_app["APP_INC_PERC"] = past_app["AMT_APPLICATION"] / past_app["AMT_ANNUITY"]
+
+    aggs = [
+        "mean",
+        "min",
+        "max",
+        "median"
+    ]
+
+    column_list = [
+        "AMT_ANNUITY",
+        "AMT_APPLICATION",
+        "AMT_CREDIT",
+        "AMT_DOWN_PAYMENT",
+        "AMT_GOODS_PRICE",
+        "CNT_PAYMENT",
+        "ACT_CREDIT_PERC",
+        "DOWN_PAY_PERC",
+        "DAYS_DECISION",
+        "CRED_INC_PERC",
+        "APP_INC_PERC"
+    ]
+
+    aggegration = past_app.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    aggegration.columns = ["_".join(("PA",) + x) for x in aggegration.columns.ravel()]
+
+    total_past_application = past_app.groupby("SK_ID_CURR").size()
+    total_past_application = total_past_application.reset_index(name='PREV_APP_COUNT').set_index("SK_ID_CURR")
+
+    num_of_refused = past_app.groupby("SK_ID_CURR")
+
+    return aggegration.join(other=total_past_application, on="SK_ID_CURR", how="left")
+
+
+if __name__ == "__main__":
+    read_and_process_past_app()
