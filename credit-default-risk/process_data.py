@@ -16,6 +16,7 @@ _cache_installment_result = None
 _cache_credit_card_result = None
 _cache_pos_cash_result = None
 _cache_pa_result = None
+_cache_bureau_result = None
 
 
 def read_train():
@@ -26,14 +27,12 @@ def read_test():
     return pd.read_csv(folder + "application_test.csv")
 
 
-def read_bureau():
-    return pd.read_csv(folder + "bureau.csv")
-
-
 def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False,
                  fill_null_columns=False):
     features = data[application_fields].copy()
-    global _cache_installment_result, _cache_credit_card_result, _cache_pos_cash_result, _cache_pa_result
+    global _cache_installment_result, _cache_credit_card_result, \
+        _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
+
     if _cache_installment_result is None:
         _cache_installment_result = read_and_process_installment()
 
@@ -46,11 +45,15 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
     if _cache_pa_result is None:
         _cache_pa_result = read_and_process_past_app()
 
+    if _cache_bureau_result is None:
+        _cache_bureau_result = read_and_process_bureau()
+
     features = features.set_index("SK_ID_CURR")
     features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
+    features = features.join(other=_cache_bureau_result, on="SK_ID_CURR", how="left")
 
     categorical_feat_list = []
 
@@ -108,10 +111,10 @@ def read_and_process_installment():
         "median"
     ]
 
-    aggegration = installments.groupby("SK_ID_CURR")[["INST_DAYS_DIFF", "INST_PAYMENT_DIFF"]].agg(aggs)
+    column_list = ["INST_DAYS_DIFF", "INST_PAYMENT_DIFF"]
+
+    aggegration = installments.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("INS",) + x) for x in aggegration.columns.ravel()]
-    # print(aggegration.head(100))
-    # print(aggegration.shape)
 
     return aggegration
 
@@ -204,13 +207,68 @@ def read_and_process_past_app():
     aggegration = past_app.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("PA",) + x) for x in aggegration.columns.ravel()]
 
-    total_past_application = past_app.groupby("SK_ID_CURR").size()
-    total_past_application = total_past_application.reset_index(name='PREV_APP_COUNT').set_index("SK_ID_CURR")
+    total_prev_app = past_app.groupby("SK_ID_CURR").size()
+    total_prev_app = total_prev_app.reset_index(name='PREV_APP_COUNT').set_index("SK_ID_CURR")
 
-    num_of_refused = past_app.groupby("SK_ID_CURR")
+    num_of_refused = past_app.loc[past_app["NAME_CONTRACT_STATUS"] == "Refused"].groupby("SK_ID_CURR").size()
+    num_of_refused = num_of_refused.reset_index(name='PREV_APP_REFUSED').set_index("SK_ID_CURR")
+    
+    total_prev_app = total_prev_app.join(other=num_of_refused, on="SK_ID_CURR", how="left")
+    total_prev_app["PREV_APP_REFUSED"].fillna(0, inplace=True)
+    
+    total_prev_app["PREV_APP_REFUSE_PERC"] = total_prev_app["PREV_APP_REFUSED"] / total_prev_app["PREV_APP_COUNT"]
 
-    return aggegration.join(other=total_past_application, on="SK_ID_CURR", how="left")
+    # print(total_prev_app.head(40))
+    # print(past_app.loc[past_app["SK_ID_CURR"] == 100030])
+
+    return aggegration.join(other=total_prev_app, on="SK_ID_CURR", how="left")
+
+
+def read_and_process_bureau():
+    bureau = pd.read_csv(folder + "bureau.csv")
+
+    aggs = {
+        "DAYS_CREDIT": ["mean", "min", "max", "median"],
+        "DAYS_CREDIT_ENDDATE": ["min", "max", "mean"],
+        "DAYS_ENDDATE_FACT": ["min", "max", "mean"],
+        "CREDIT_DAY_OVERDUE": ["mean", "min", "max", "median", "sum"],
+        "CNT_CREDIT_PROLONG": ["mean", "min", "max", "median", "sum"],
+        "AMT_CREDIT_MAX_OVERDUE": ["mean", "min", "max", "median"],
+        "AMT_CREDIT_SUM": ["mean", "min", "max", "median", "sum"],
+        "AMT_CREDIT_SUM_DEBT": ["min", "mean", "median", "max", "sum"],
+        "AMT_CREDIT_SUM_LIMIT": ["min", "mean", "median", "max", "sum"],
+        "AMT_CREDIT_SUM_OVERDUE": ["mean", "min", "max", "median", "sum"]
+    }
+
+    aggegration = bureau.groupby("SK_ID_CURR").agg(aggs)
+    aggegration.columns = ["_".join(("BU",) + x) for x in aggegration.columns.ravel()]
+
+    # finding number of active credit bureau
+    num_of_active = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR").size()
+    num_of_active = num_of_active.reset_index(name='NUM_ACT_BU_CREDIT').set_index("SK_ID_CURR")
+
+    num_of_closed = bureau.loc[bureau["CREDIT_ACTIVE"] == "Closed"].groupby("SK_ID_CURR").size()
+    num_of_closed = num_of_closed.reset_index(name='NUM_CL_BU_CREDIT').set_index("SK_ID_CURR")
+
+    aggegration = aggegration.join(other=num_of_active, on="SK_ID_CURR", how="left")
+    aggegration["NUM_ACT_BU_CREDIT"].fillna(0, inplace=True)
+
+    aggegration = aggegration.join(other=num_of_closed, on="SK_ID_CURR", how="left")
+    aggegration["NUM_CL_BU_CREDIT"].fillna(0, inplace=True)
+
+    bureau_balance = pd.read_csv(folder + "bureau_balance.csv")
+
+    bureau_balance_pivot = bureau[["SK_ID_CURR", "SK_ID_BUREAU"]].join(bureau_balance.set_index("SK_ID_BUREAU"), on="SK_ID_BUREAU", how="left")
+    bureau_balance_pivot = bureau_balance_pivot[["SK_ID_CURR", "STATUS"]].pivot_table(index=["SK_ID_CURR"],
+                                                                                      columns="STATUS", aggfunc=len,
+                                                                                      fill_value=0)
+    bureau_balance_pivot = bureau_balance_pivot.rename_axis(None, axis=1)
+    bureau_balance_pivot.columns = ["BU_STATUS_" + x for x in bureau_balance_pivot.columns]
+
+    aggegration = aggegration.join(other=bureau_balance_pivot, on="SK_ID_CURR", how="left")
+
+    return aggegration
 
 
 if __name__ == "__main__":
-    read_and_process_past_app()
+    read_and_process_bureau()
