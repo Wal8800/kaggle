@@ -12,6 +12,28 @@ ignore_feat = [
     "SK_ID_CURR"
 ]
 
+main_feature_names = [
+    "EXT_SOURCE_2",
+    "EXT_SOURCE_1",
+    "EXT_SOURCE_3",
+    "DAYS_BIRTH",
+    "DAYS_EMPLOYED",
+    "AMT_CREDIT",
+    "AMT_INCOME_TOTAL",
+    "AMT_ANNUITY",
+    "REGION_RATING_CLIENT_W_CITY",
+    "CODE_GENDER",
+    "FLAG_OWN_CAR",
+    "FLAG_OWN_REALTY",
+    "NAME_INCOME_TYPE",
+    "NAME_HOUSING_TYPE",
+    "NAME_FAMILY_STATUS",
+    "DAYS_ID_PUBLISH",
+    "OWN_CAR_AGE",
+    "SK_ID_CURR",
+    "AMT_GOODS_PRICE"
+]
+
 _cache_installment_result = None
 _cache_credit_card_result = None
 _cache_pos_cash_result = None
@@ -27,9 +49,9 @@ def read_test():
     return pd.read_csv(folder + "application_test.csv")
 
 
-def process_data(data, application_fields, always_label_encode=False, drop_null_columns=False,
+def process_data(data, always_label_encode=False, drop_null_columns=False,
                  fill_null_columns=False):
-    features = data[application_fields].copy()
+    features = data[main_feature_names].copy()
     global _cache_installment_result, _cache_credit_card_result, \
         _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
 
@@ -53,7 +75,11 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
     features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
+
     features = features.join(other=_cache_bureau_result, on="SK_ID_CURR", how="left")
+    features["BU_CREDIT_INCOME_PERC"] = features["ACTIVE_BU_CREDIT_SUM"] / features["AMT_INCOME_TOTAL"]
+    features["TOTAL_CREDIT"] = features["ACTIVE_BU_CREDIT_SUM"] + features['AMT_CREDIT']
+    features["TOTAL_CREDIT_INCOME_PERC"] = features["TOTAL_CREDIT"] / features["AMT_INCOME_TOTAL"]
 
     categorical_feat_list = []
 
@@ -64,9 +90,10 @@ def process_data(data, application_fields, always_label_encode=False, drop_null_
 
     features['CREDIT_INCOME_PERCENT'] = features['AMT_CREDIT'] / features['AMT_INCOME_TOTAL']
     features['ANNUITY_INCOME_PERCENT'] = features['AMT_ANNUITY'] / features['AMT_INCOME_TOTAL']
-    features['CREDIT_TERM'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
+    features["GOOD_INCOME_PERCENT"] = features["AMT_GOODS_PRICE"] / features["AMT_INCOME_TOTAL"]
     features['DAYS_EMPLOYED_PERCENT'] = features['DAYS_EMPLOYED'] / features['DAYS_BIRTH']
     features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
+    features['CREDIT_TO_GOOD_RATIO'] = features["AMT_CREDIT"] / features["AMT_GOODS_PRICE"]
 
     for feat in ignore_feat:
         if feat in list(features):
@@ -111,9 +138,14 @@ def read_and_process_installment():
         "median"
     ]
 
-    column_list = ["INST_DAYS_DIFF", "INST_PAYMENT_DIFF"]
+    column_list = {
+        "INST_DAYS_DIFF": aggs,
+        "INST_PAYMENT_DIFF": aggs,
+        "AMT_PAYMENT": ["mean", "min", "max", "median", "sum"],
+        "AMT_INSTALMENT": ["mean", "min", "max", "median", "sum"]
+    }
 
-    aggegration = installments.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    aggegration = installments.groupby("SK_ID_CURR").agg(column_list)
     aggegration.columns = ["_".join(("INS",) + x) for x in aggegration.columns.ravel()]
 
     return aggegration
@@ -180,8 +212,10 @@ def read_and_process_past_app():
     past_app = pd.read_csv(folder + "previous_application.csv")
     past_app["ACT_CREDIT_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_APPLICATION"]
     past_app["DOWN_PAY_PERC"] = past_app["AMT_DOWN_PAYMENT"] / past_app["AMT_CREDIT"]
-    past_app["CRED_INC_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_ANNUITY"]
-    past_app["APP_INC_PERC"] = past_app["AMT_APPLICATION"] / past_app["AMT_ANNUITY"]
+    past_app["CRED_ANNUITY_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_ANNUITY"]
+    past_app["APP_ANNUITY_PERC"] = past_app["AMT_APPLICATION"] / past_app["AMT_ANNUITY"]
+    past_app["GOOD_ANNUITY_PERC"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_ANNUITY"]
+    past_app["GOOD_CRED_RATIO"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_CREDIT"]
 
     aggs = [
         "mean",
@@ -190,21 +224,23 @@ def read_and_process_past_app():
         "median"
     ]
 
-    column_list = [
-        "AMT_ANNUITY",
-        "AMT_APPLICATION",
-        "AMT_CREDIT",
-        "AMT_DOWN_PAYMENT",
-        "AMT_GOODS_PRICE",
-        "CNT_PAYMENT",
-        "ACT_CREDIT_PERC",
-        "DOWN_PAY_PERC",
-        "DAYS_DECISION",
-        "CRED_INC_PERC",
-        "APP_INC_PERC"
-    ]
+    column_aggs = {
+        "AMT_ANNUITY": ["mean", "min", "max", "median", "sum"],
+        "AMT_APPLICATION": ["mean", "min", "max", "median", "sum"],
+        "AMT_CREDIT": ["mean", "min", "max", "median", "sum"],
+        "AMT_DOWN_PAYMENT": aggs,
+        "AMT_GOODS_PRICE": ["mean", "min", "max", "median", "sum"],
+        "CNT_PAYMENT": aggs,
+        "ACT_CREDIT_PERC": aggs,
+        "DOWN_PAY_PERC": aggs,
+        "DAYS_DECISION": aggs,
+        "CRED_ANNUITY_PERC": aggs,
+        "APP_ANNUITY_PERC": aggs,
+        "GOOD_ANNUITY_PERC": aggs,
+        "GOOD_CRED_RATIO": aggs
+    }
 
-    aggegration = past_app.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    aggegration = past_app.groupby("SK_ID_CURR").agg(column_aggs)
     aggegration.columns = ["_".join(("PA",) + x) for x in aggegration.columns.ravel()]
 
     total_prev_app = past_app.groupby("SK_ID_CURR").size()
@@ -218,9 +254,6 @@ def read_and_process_past_app():
     
     total_prev_app["PREV_APP_REFUSE_PERC"] = total_prev_app["PREV_APP_REFUSED"] / total_prev_app["PREV_APP_COUNT"]
 
-    # print(total_prev_app.head(40))
-    # print(past_app.loc[past_app["SK_ID_CURR"] == 100030])
-
     return aggegration.join(other=total_prev_app, on="SK_ID_CURR", how="left")
 
 
@@ -233,7 +266,7 @@ def read_and_process_bureau():
         "DAYS_ENDDATE_FACT": ["min", "max", "mean"],
         "CREDIT_DAY_OVERDUE": ["mean", "min", "max", "median", "sum"],
         "CNT_CREDIT_PROLONG": ["mean", "min", "max", "median", "sum"],
-        "AMT_CREDIT_MAX_OVERDUE": ["mean", "min", "max", "median"],
+        # "AMT_CREDIT_MAX_OVERDUE": ["mean", "min", "max", "median"],
         "AMT_CREDIT_SUM": ["mean", "min", "max", "median", "sum"],
         "AMT_CREDIT_SUM_DEBT": ["min", "mean", "median", "max", "sum"],
         "AMT_CREDIT_SUM_LIMIT": ["min", "mean", "median", "max", "sum"],
@@ -244,28 +277,32 @@ def read_and_process_bureau():
     aggegration.columns = ["_".join(("BU",) + x) for x in aggegration.columns.ravel()]
 
     # finding number of active credit bureau
-    num_of_active = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR").size()
-    num_of_active = num_of_active.reset_index(name='NUM_ACT_BU_CREDIT').set_index("SK_ID_CURR")
+    bureau_status = bureau[["SK_ID_CURR", "CREDIT_ACTIVE"]].pivot_table(index=["SK_ID_CURR"], columns="CREDIT_ACTIVE",
+                                                                        aggfunc=len, fill_value=0)
 
-    num_of_closed = bureau.loc[bureau["CREDIT_ACTIVE"] == "Closed"].groupby("SK_ID_CURR").size()
-    num_of_closed = num_of_closed.reset_index(name='NUM_CL_BU_CREDIT').set_index("SK_ID_CURR")
+    bureau_status = bureau_status.rename_axis(None, axis=1)
+    bureau_status.columns = ["CREDIT_ACTIVE_" + x for x in bureau_status.columns]
+    bureau_status["BU_CREDIT_TOTAL"] = bureau_status[bureau_status.columns].sum(axis=1)
+    bureau_status["CLOSED_PERC"] = bureau_status["CREDIT_ACTIVE_Closed"] / bureau_status["BU_CREDIT_TOTAL"]
+    bureau_status["CLOSED_ACTIVE_RATIO"] = bureau_status["CREDIT_ACTIVE_Active"] / bureau_status["CREDIT_ACTIVE_Closed"]
 
-    aggegration = aggegration.join(other=num_of_active, on="SK_ID_CURR", how="left")
-    aggegration["NUM_ACT_BU_CREDIT"].fillna(0, inplace=True)
+    aggegration = aggegration.join(other=bureau_status, on="SK_ID_CURR", how="left")
 
-    aggegration = aggegration.join(other=num_of_closed, on="SK_ID_CURR", how="left")
-    aggegration["NUM_CL_BU_CREDIT"].fillna(0, inplace=True)
-
+    # aggregation of monthly balance status
     bureau_balance = pd.read_csv(folder + "bureau_balance.csv")
-
-    bureau_balance_pivot = bureau[["SK_ID_CURR", "SK_ID_BUREAU"]].join(bureau_balance.set_index("SK_ID_BUREAU"), on="SK_ID_BUREAU", how="left")
+    bureau_balance_pivot = bureau[["SK_ID_CURR", "SK_ID_BUREAU"]].join(bureau_balance.set_index("SK_ID_BUREAU"),
+                                                                       on="SK_ID_BUREAU", how="left")
     bureau_balance_pivot = bureau_balance_pivot[["SK_ID_CURR", "STATUS"]].pivot_table(index=["SK_ID_CURR"],
                                                                                       columns="STATUS", aggfunc=len,
                                                                                       fill_value=0)
     bureau_balance_pivot = bureau_balance_pivot.rename_axis(None, axis=1)
     bureau_balance_pivot.columns = ["BU_STATUS_" + x for x in bureau_balance_pivot.columns]
-
     aggegration = aggegration.join(other=bureau_balance_pivot, on="SK_ID_CURR", how="left")
+
+    # finding credit for active bureau
+    active_bu_credit_sum = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR")["AMT_CREDIT_SUM", "AMT_CREDIT_SUM_DEBT"].sum()
+    active_bu_credit_sum = active_bu_credit_sum.add_prefix("ACTIVE_")
+    aggegration = aggegration.join(other=active_bu_credit_sum, on="SK_ID_CURR", how="left")
 
     return aggegration
 

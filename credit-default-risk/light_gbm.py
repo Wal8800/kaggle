@@ -6,6 +6,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import KFold
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import cross_val_score
+from sklearn.preprocessing import MinMaxScaler
 import datetime
 import pprint
 import time
@@ -19,7 +20,7 @@ def create_classifier():
     return lgb.LGBMClassifier(
         nthread=3,
         n_estimators=5000,
-        learning_rate=0.05,
+        learning_rate=0.01,
         num_leaves=34,
         colsample_bytree=0.9497036,
         subsample=0.8715623,
@@ -61,32 +62,10 @@ test_data_raw = process_data.read_test()
 train_label = train_data["TARGET"]
 train_data.drop("TARGET", axis=1, inplace=True)
 
-feature_names = [
-    "EXT_SOURCE_2",
-    "EXT_SOURCE_1",
-    "EXT_SOURCE_3",
-    "DAYS_BIRTH",
-    "DAYS_EMPLOYED",
-    "AMT_CREDIT",
-    "AMT_INCOME_TOTAL",
-    "AMT_ANNUITY",
-    "REGION_RATING_CLIENT_W_CITY",
-    "CODE_GENDER",
-    "FLAG_OWN_CAR",
-    "FLAG_OWN_REALTY",
-    "NAME_INCOME_TYPE",
-    "NAME_HOUSING_TYPE",
-    "OCCUPATION_TYPE",
-    "ORGANIZATION_TYPE",
-    "NAME_FAMILY_STATUS",
-    "DAYS_ID_PUBLISH",
-    "OWN_CAR_AGE",
-    "SK_ID_CURR"
-]
 
 process_start_time = time.time()
-train_data, cate_feats = process_data.process_data(train_data, feature_names, always_label_encode=True)
-test_data, _ = process_data.process_data(test_data_raw, feature_names, always_label_encode=True)
+train_data, cate_feats = process_data.process_data(train_data, always_label_encode=True)
+test_data, _ = process_data.process_data(test_data_raw, always_label_encode=True)
 print_time(time.time()-process_start_time)
 
 pp = pprint.PrettyPrinter(width=200, compact=True)
