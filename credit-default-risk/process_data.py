@@ -29,9 +29,11 @@ main_feature_names = [
     "NAME_HOUSING_TYPE",
     "NAME_FAMILY_STATUS",
     "DAYS_ID_PUBLISH",
-    "OWN_CAR_AGE",
     "SK_ID_CURR",
-    "AMT_GOODS_PRICE"
+    "AMT_GOODS_PRICE",
+    "CNT_CHILDREN",
+    "CNT_FAM_MEMBERS",
+    "REGION_POPULATION_RELATIVE"
 ]
 
 _cache_installment_result = None
@@ -52,6 +54,29 @@ def read_test():
 def process_data(data, always_label_encode=False, drop_null_columns=False,
                  fill_null_columns=False):
     features = data[main_feature_names].copy()
+
+    features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
+
+    features['DAYS_EMPLOYED'].replace({365243: np.nan}, inplace=True)
+    features['DAYS_EMPLOYED_ANOM'] = features["DAYS_EMPLOYED"] == 365243
+
+    features['CREDIT_INCOME_PERCENT'] = features['AMT_CREDIT'] / features['AMT_INCOME_TOTAL']
+    features['ANNUITY_INCOME_PERCENT'] = features['AMT_ANNUITY'] / features['AMT_INCOME_TOTAL']
+    features["GOOD_INCOME_PERCENT"] = features["AMT_GOODS_PRICE"] / features["AMT_INCOME_TOTAL"]
+    features['DAYS_EMPLOYED_PERCENT'] = features['DAYS_EMPLOYED'] / features['DAYS_BIRTH']
+    features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
+    features['CREDIT_TO_GOOD_RATIO'] = features["AMT_CREDIT"] / features["AMT_GOODS_PRICE"]
+
+    features["CREDIT_PER_CHILD"] = features["AMT_CREDIT"] / features["CNT_CHILDREN"]
+    features["INCOME_PER_CHILD"] = features["AMT_INCOME_TOTAL"] / features["CNT_CHILDREN"]
+    features["CREDIT_PER_FAM"] = features["AMT_CREDIT"] / features["CNT_FAM_MEMBERS"]
+    features["INCOME_PER_FAM"] = features["AMT_INCOME_TOTAL"] / features["CNT_FAM_MEMBERS"]
+    features["NON_CHILD_MEMBER_RATIO"] = features["CNT_CHILDREN"] / features["CNT_FAM_MEMBERS"]
+
+    features["CREDIT_PER_POP"] = features["AMT_CREDIT"] / features["REGION_POPULATION_RELATIVE"]
+    features["INCOME_PER_POP"] = features["AMT_INCOME_TOTAL"] / features["REGION_POPULATION_RELATIVE"]
+    features["PAYMENT_RATE_PER_POP"] = features["PAYMENT_RATE"] / features["REGION_POPULATION_RELATIVE"]
+
     global _cache_installment_result, _cache_credit_card_result, \
         _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
 
@@ -75,25 +100,19 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
     features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
+    features["PA_PAYMENT_RATE_MED_PERC"] = features["PA_PAST_PAYMENT_RATE_median"] / features["PAYMENT_RATE"]
+    features["PA_PAYMENT_RATE_MEAN_PERC"] = features["PA_PAST_PAYMENT_RATE_mean"] / features["PAYMENT_RATE"]
 
     features = features.join(other=_cache_bureau_result, on="SK_ID_CURR", how="left")
-    features["BU_CREDIT_INCOME_PERC"] = features["ACTIVE_BU_CREDIT_SUM"] / features["AMT_INCOME_TOTAL"]
-    features["TOTAL_CREDIT"] = features["ACTIVE_BU_CREDIT_SUM"] + features['AMT_CREDIT']
+    features["BU_CREDIT_INCOME_PERC"] = features["ACTIVE_AMT_CREDIT_SUM"] / features["AMT_INCOME_TOTAL"]
+    features["TOTAL_CREDIT"] = features["ACTIVE_AMT_CREDIT_SUM"] + features['AMT_CREDIT']
     features["TOTAL_CREDIT_INCOME_PERC"] = features["TOTAL_CREDIT"] / features["AMT_INCOME_TOTAL"]
+    features["BU_ANNUITY_MEAN_PERC"] = features["BU_CLOSED_ANNUITY_mean"] / features["AMT_ANNUITY"]
+    features["BU_ANNUITY_MEDIAN_PERC"] = features["BU_CLOSED_ANNUITY_median"] / features["AMT_ANNUITY"]
+    features["BU_ANNUITY_INCOME_PERC_MED"] = features["BU_CLOSED_ANNUITY_median"] / features["AMT_INCOME_TOTAL"]
+    features["BU_ANNUITY_INCOME_PERC_MEA"] = features["BU_CLOSED_ANNUITY_mean"] / features["AMT_INCOME_TOTAL"]
 
     categorical_feat_list = []
-
-    features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
-
-    features['DAYS_EMPLOYED'].replace({365243: np.nan}, inplace=True)
-    features['DAYS_EMPLOYED_ANOM'] = features["DAYS_EMPLOYED"] == 365243
-
-    features['CREDIT_INCOME_PERCENT'] = features['AMT_CREDIT'] / features['AMT_INCOME_TOTAL']
-    features['ANNUITY_INCOME_PERCENT'] = features['AMT_ANNUITY'] / features['AMT_INCOME_TOTAL']
-    features["GOOD_INCOME_PERCENT"] = features["AMT_GOODS_PRICE"] / features["AMT_INCOME_TOTAL"]
-    features['DAYS_EMPLOYED_PERCENT'] = features['DAYS_EMPLOYED'] / features['DAYS_BIRTH']
-    features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
-    features['CREDIT_TO_GOOD_RATIO'] = features["AMT_CREDIT"] / features["AMT_GOODS_PRICE"]
 
     for feat in ignore_feat:
         if feat in list(features):
@@ -212,7 +231,7 @@ def read_and_process_past_app():
     past_app = pd.read_csv(folder + "previous_application.csv")
     past_app["ACT_CREDIT_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_APPLICATION"]
     past_app["DOWN_PAY_PERC"] = past_app["AMT_DOWN_PAYMENT"] / past_app["AMT_CREDIT"]
-    past_app["CRED_ANNUITY_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_ANNUITY"]
+    past_app["PAST_PAYMENT_RATE"] = past_app["AMT_ANNUITY"] / past_app["AMT_CREDIT"]
     past_app["APP_ANNUITY_PERC"] = past_app["AMT_APPLICATION"] / past_app["AMT_ANNUITY"]
     past_app["GOOD_ANNUITY_PERC"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_ANNUITY"]
     past_app["GOOD_CRED_RATIO"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_CREDIT"]
@@ -234,7 +253,7 @@ def read_and_process_past_app():
         "ACT_CREDIT_PERC": aggs,
         "DOWN_PAY_PERC": aggs,
         "DAYS_DECISION": aggs,
-        "CRED_ANNUITY_PERC": aggs,
+        "PAST_PAYMENT_RATE": aggs,
         "APP_ANNUITY_PERC": aggs,
         "GOOD_ANNUITY_PERC": aggs,
         "GOOD_CRED_RATIO": aggs
@@ -253,12 +272,24 @@ def read_and_process_past_app():
     total_prev_app["PREV_APP_REFUSED"].fillna(0, inplace=True)
     
     total_prev_app["PREV_APP_REFUSE_PERC"] = total_prev_app["PREV_APP_REFUSED"] / total_prev_app["PREV_APP_COUNT"]
+    aggegration = aggegration.join(other=total_prev_app, on="SK_ID_CURR", how="left")
 
-    return aggegration.join(other=total_prev_app, on="SK_ID_CURR", how="left")
+    # most recent previous application
+    most_recent_pa = past_app.sort_values(by='DAYS_DECISION', ascending=False)
+    most_recent_pa = most_recent_pa.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+    most_recent_pa["TGT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_CREDIT"]
+    most_recent_pa["ACT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_APPLICATION"]
+    most_recent_pa["PAID_CREDIT"] = most_recent_pa["AMT_APPLICATION"] / most_recent_pa["AMT_CREDIT"]
+    most_recent_pa = most_recent_pa.add_prefix("RECENT_PA_")
+    aggegration = aggegration.join(other=most_recent_pa, on="SK_ID_CURR", how="left")
+
+    return aggegration
 
 
 def read_and_process_bureau():
     bureau = pd.read_csv(folder + "bureau.csv")
+    bureau["DAYS_CREDIT"] = bureau["DAYS_CREDIT"] * -1
+    bureau["DAYS_ENDDATE_FACT"] = bureau["DAYS_ENDDATE_FACT"] * -1
 
     aggs = {
         "DAYS_CREDIT": ["mean", "min", "max", "median"],
@@ -266,7 +297,6 @@ def read_and_process_bureau():
         "DAYS_ENDDATE_FACT": ["min", "max", "mean"],
         "CREDIT_DAY_OVERDUE": ["mean", "min", "max", "median", "sum"],
         "CNT_CREDIT_PROLONG": ["mean", "min", "max", "median", "sum"],
-        # "AMT_CREDIT_MAX_OVERDUE": ["mean", "min", "max", "median"],
         "AMT_CREDIT_SUM": ["mean", "min", "max", "median", "sum"],
         "AMT_CREDIT_SUM_DEBT": ["min", "mean", "median", "max", "sum"],
         "AMT_CREDIT_SUM_LIMIT": ["min", "mean", "median", "max", "sum"],
@@ -303,6 +333,39 @@ def read_and_process_bureau():
     active_bu_credit_sum = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR")["AMT_CREDIT_SUM", "AMT_CREDIT_SUM_DEBT"].sum()
     active_bu_credit_sum = active_bu_credit_sum.add_prefix("ACTIVE_")
     aggegration = aggegration.join(other=active_bu_credit_sum, on="SK_ID_CURR", how="left")
+
+    # number of bureau credit applied in the last 60, 120, 180, 240
+    day_scale = 180
+    for i in range(0, 5):
+        min_day = i*day_scale
+        max_day = (i + 1) * day_scale
+        column_name = 'BU_APPIED_COUNT_{}'.format(max_day)
+        number_applied = bureau[(min_day <= bureau["DAYS_CREDIT"]) & (bureau["DAYS_CREDIT"] < max_day)]
+        number_applied = number_applied.groupby("SK_ID_CURR").size()
+        number_applied = number_applied.reset_index(name=column_name).set_index("SK_ID_CURR")
+
+        aggegration = aggegration.join(other=number_applied, on="SK_ID_CURR", how="left")
+        aggegration[column_name] = aggegration[column_name].fillna(0)
+
+    # figuring out the payment rate of the closed bureau credit
+    closed_credit = bureau.loc[bureau["CREDIT_ACTIVE"] == "Closed"].copy()
+    closed_credit["TIME_TAKEN"] = closed_credit["DAYS_CREDIT"] = closed_credit["DAYS_ENDDATE_FACT"]
+    closed_credit["CLOSED_ANNUITY"] = (closed_credit["AMT_CREDIT_SUM"] / closed_credit["TIME_TAKEN"]) * 365
+
+    closed_aggs = {
+        "TIME_TAKEN": ["mean", "min", "max", "median"],
+        "CLOSED_ANNUITY": ["mean", "min", "max", "median"]
+    }
+
+    closed_aggegration = closed_credit.groupby("SK_ID_CURR").agg(closed_aggs)
+    closed_aggegration.columns = ["_".join(("BU",) + x) for x in closed_aggegration.columns.ravel()]
+    aggegration = aggegration.join(closed_aggegration, on="SK_ID_CURR", how="left")
+
+    # status of their most recent bureau credit
+    most_recent_bureau = bureau.sort_values(by='DAYS_CREDIT')
+    most_recent_bureau = most_recent_bureau.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+    most_recent_bureau = most_recent_bureau.add_prefix("RECENT_BU_")
+    aggegration = aggegration.join(most_recent_bureau, on="SK_ID_CURR", how="left")
 
     return aggegration
 

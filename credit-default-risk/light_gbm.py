@@ -1,26 +1,20 @@
 import lightgbm as lgb
 import numpy as np
 import process_data
+import util
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import KFold
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import MinMaxScaler
-import datetime
 import pprint
 import time
-
-
-def print_time(seconds):
-    print(str(datetime.timedelta(seconds=seconds)))
+import datetime
 
 
 def create_classifier():
     return lgb.LGBMClassifier(
         nthread=3,
         n_estimators=5000,
-        learning_rate=0.01,
+        learning_rate=0.05,
         num_leaves=34,
         colsample_bytree=0.9497036,
         subsample=0.8715623,
@@ -62,16 +56,17 @@ test_data_raw = process_data.read_test()
 train_label = train_data["TARGET"]
 train_data.drop("TARGET", axis=1, inplace=True)
 
-
 process_start_time = time.time()
 train_data, cate_feats = process_data.process_data(train_data, always_label_encode=True)
 test_data, _ = process_data.process_data(test_data_raw, always_label_encode=True)
-print_time(time.time()-process_start_time)
+util.print_time(time.time()-process_start_time)
 
-pp = pprint.PrettyPrinter(width=200, compact=True)
-pp.pprint(list(train_data))
+# pp = pprint.PrettyPrinter(width=200, compact=True)
+# pp.pprint(list(train_data))
 # scores = cross_val_score(create_classifier(), train_data, train_label, cv=5, scoring='roc_auc')
 # print(scores)
+
+print(train_data.isnull().sum())
 
 fold_importance_df = pd.DataFrame()
 fold_importance_df["feature"] = list(train_data)
@@ -116,7 +111,7 @@ for current_fold, (train_index, validation_index) in enumerate(skf.split(train_d
 
     sub_preds += clf.predict_proba(test_data, num_iteration=clf.best_iteration_)[:, 1] / skf.n_splits
 
-print_time(time.time()-train_start_time)
+util.print_time(time.time()-train_start_time)
 
 print("Average validation score: ", np.average(validation_scores))
 print('Full AUC score %.6f' % roc_auc_score(train_label, oof_preds))
@@ -124,7 +119,7 @@ print('Full AUC score %.6f' % roc_auc_score(train_label, oof_preds))
 fold_importance_df = fold_importance_df.set_index("feature")
 fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
-print(fold_importance_df.head(50))
+print(fold_importance_df)
 
-create_submission(sub_preds)
+# create_submission(sub_preds)
 # pred_with_full_data()
