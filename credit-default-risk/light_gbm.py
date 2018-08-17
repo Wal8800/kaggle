@@ -8,6 +8,9 @@ from sklearn.metrics import roc_auc_score
 import pprint
 import time
 import datetime
+import warnings
+
+warnings.simplefilter("ignore")
 
 
 def create_classifier():
