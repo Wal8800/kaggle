@@ -28,6 +28,7 @@ def create_classifier():
         min_child_weight=39.3259775,
         silent=-1,
         verbose=-1,
+        device="cpu"
     )
 
 
