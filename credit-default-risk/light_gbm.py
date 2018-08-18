@@ -124,5 +124,5 @@ fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
 print(fold_importance_df)
 
-# create_submission(sub_preds)
+create_submission(sub_preds)
 # pred_with_full_data()

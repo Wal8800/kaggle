@@ -5,7 +5,7 @@ import numpy as np
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
-pd.set_option('display.width', 1000)
+pd.set_option('display.width', 10000)
 
 folder = "data/"
 ignore_feat = [
@@ -77,6 +77,14 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features["INCOME_PER_POP"] = features["AMT_INCOME_TOTAL"] / features["REGION_POPULATION_RELATIVE"]
     features["PAYMENT_RATE_PER_POP"] = features["PAYMENT_RATE"] / features["REGION_POPULATION_RELATIVE"]
 
+    features["EXT_1_2_DIFF"] = features["EXT_SOURCE_1"] - features["EXT_SOURCE_2"]
+    features["EXT_1_3_DIFF"] = features["EXT_SOURCE_1"] - features["EXT_SOURCE_3"]
+    features["EXT_2_3_DIFF"] = features["EXT_SOURCE_2"] - features["EXT_SOURCE_3"]
+
+    features["EXT_1_2_DIV"] = features["EXT_SOURCE_1"] / features["EXT_SOURCE_2"]
+    features["EXT_1_3_DIV"] = features["EXT_SOURCE_1"] / features["EXT_SOURCE_3"]
+    features["EXT_2_3_DIV"] = features["EXT_SOURCE_2"] / features["EXT_SOURCE_3"]
+
     global _cache_installment_result, _cache_credit_card_result, \
         _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
 
@@ -140,7 +148,6 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
             features = pd.concat([features, dummy], axis=1)
             features.drop(column_name, axis=1, inplace=True)
 
-    print("Number of features: {}".format(len(list(features))))
     return features, categorical_feat_list
 
 
@@ -166,6 +173,14 @@ def read_and_process_installment():
 
     aggegration = installments.groupby("SK_ID_CURR").agg(column_list)
     aggegration.columns = ["_".join(("INS",) + x) for x in aggegration.columns.ravel()]
+
+    for last_n in [1, 10, 50]:
+        temp = installments.sort_values(["SK_ID_CURR", "DAYS_INSTALMENT"]).groupby("SK_ID_CURR").head(last_n).copy()
+        temp = temp.groupby("SK_ID_CURR").agg(column_list)
+        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
     return aggegration
 
@@ -199,12 +214,22 @@ def read_and_process_credit_card():
     aggegration = credit_card.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("CC",) + x) for x in aggegration.columns.ravel()]
 
+    for last_n in [1, 10, 50]:
+        temp = credit_card.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
+
+        temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
+        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+
+    print(aggegration.head())
     return aggegration
 
 
 def read_and_process_pos_cash():
     pos_cash = pd.read_csv(folder + "POS_CASH_balance.csv")
-    pos_cash["INST_LEFT_PERC"] = pos_cash["CNT_INSTALMENT"] / pos_cash["CNT_INSTALMENT_FUTURE"]
+    pos_cash["INST_LEFT_DIFF"] = pos_cash["CNT_INSTALMENT"] - pos_cash["CNT_INSTALMENT_FUTURE"]
     aggs = [
         "mean",
         "min",
@@ -218,11 +243,28 @@ def read_and_process_pos_cash():
         "CNT_INSTALMENT_FUTURE",
         "SK_DPD",
         "SK_DPD_DEF",
-        "INST_LEFT_PERC"
+        "INST_LEFT_DIFF"
     ]
 
     aggegration = pos_cash.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("PSCH",) + x) for x in aggegration.columns.ravel()]
+
+    for last_n in [1, 10, 50]:
+        temp = pos_cash.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
+
+        temp_list = [
+            "CNT_INSTALMENT",
+            "CNT_INSTALMENT_FUTURE",
+            "SK_DPD",
+            "SK_DPD_DEF",
+            "INST_LEFT_DIFF"
+        ]
+
+        temp = temp.groupby("SK_ID_CURR")[temp_list].agg(aggs)
+        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
     return aggegration
 
@@ -371,4 +413,4 @@ def read_and_process_bureau():
 
 
 if __name__ == "__main__":
-    read_and_process_bureau()
+    read_and_process_credit_card()
