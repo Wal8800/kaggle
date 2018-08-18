@@ -318,10 +318,29 @@ def read_and_process_past_app():
     # most recent previous application
     most_recent_pa = past_app.sort_values(by='DAYS_DECISION', ascending=False)
     most_recent_pa = most_recent_pa.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+
+    recent_col_list = [
+        "AMT_ANNUITY",
+        "AMT_APPLICATION",
+        "AMT_CREDIT",
+        "AMT_DOWN_PAYMENT",
+        "AMT_GOODS_PRICE",
+        "CNT_PAYMENT",
+        "ACT_CREDIT_PERC",
+        "DOWN_PAY_PERC",
+        "DAYS_DECISION",
+        "PAST_PAYMENT_RATE",
+        "APP_ANNUITY_PERC",
+        "GOOD_ANNUITY_PERC",
+        "GOOD_CRED_RATIO"
+    ]
+
+    most_recent_pa = most_recent_pa[recent_col_list].copy()
     most_recent_pa["TGT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_CREDIT"]
     most_recent_pa["ACT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_APPLICATION"]
     most_recent_pa["PAID_CREDIT"] = most_recent_pa["AMT_APPLICATION"] / most_recent_pa["AMT_CREDIT"]
     most_recent_pa = most_recent_pa.add_prefix("RECENT_PA_")
+
     aggegration = aggegration.join(other=most_recent_pa, on="SK_ID_CURR", how="left")
 
     return aggegration
@@ -405,11 +424,25 @@ def read_and_process_bureau():
     # status of their most recent bureau credit
     most_recent_bureau = bureau.sort_values(by='DAYS_CREDIT')
     most_recent_bureau = most_recent_bureau.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+
+    most_recent_col_list = [
+        "DAYS_CREDIT",
+        "DAYS_CREDIT_ENDDATE",
+        "DAYS_ENDDATE_FACT",
+        "CREDIT_DAY_OVERDUE",
+        "CNT_CREDIT_PROLONG",
+        "AMT_CREDIT_SUM",
+        "AMT_CREDIT_SUM_DEBT",
+        "AMT_CREDIT_SUM_LIMIT",
+        "AMT_CREDIT_SUM_OVERDUE"
+    ]
+    most_recent_bureau = most_recent_bureau[most_recent_col_list].copy()
     most_recent_bureau = most_recent_bureau.add_prefix("RECENT_BU_")
+
     aggegration = aggegration.join(most_recent_bureau, on="SK_ID_CURR", how="left")
 
     return aggegration
 
 
 if __name__ == "__main__":
-    read_and_process_credit_card()
+    read_and_process_bureau()

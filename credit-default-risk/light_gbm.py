@@ -15,7 +15,7 @@ warnings.simplefilter("ignore")
 
 def create_classifier():
     return lgb.LGBMClassifier(
-        nthread=3,
+        nthread=4,
         n_estimators=5000,
         learning_rate=0.05,
         num_leaves=34,
@@ -70,7 +70,7 @@ util.print_time(time.time()-process_start_time)
 # scores = cross_val_score(create_classifier(), train_data, train_label, cv=5, scoring='roc_auc')
 # print(scores)
 
-print(train_data.isnull().sum())
+# print(train_data.isnull().sum())
 
 fold_importance_df = pd.DataFrame()
 fold_importance_df["feature"] = list(train_data)
@@ -123,7 +123,7 @@ print('Full AUC score %.6f' % roc_auc_score(train_label, oof_preds))
 fold_importance_df = fold_importance_df.set_index("feature")
 fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
-print(fold_importance_df.head(25))
+print(fold_importance_df.head(50))
 
 create_submission(sub_preds)
 # pred_with_full_data()
