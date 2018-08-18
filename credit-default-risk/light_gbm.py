@@ -122,7 +122,7 @@ print('Full AUC score %.6f' % roc_auc_score(train_label, oof_preds))
 fold_importance_df = fold_importance_df.set_index("feature")
 fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
-print(fold_importance_df)
+print(fold_importance_df.head(25))
 
 create_submission(sub_preds)
 # pred_with_full_data()

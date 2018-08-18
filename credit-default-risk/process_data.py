@@ -214,16 +214,15 @@ def read_and_process_credit_card():
     aggegration = credit_card.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("CC",) + x) for x in aggegration.columns.ravel()]
 
-    for last_n in [1, 10, 50]:
-        temp = credit_card.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
+    # for last_n in [1, 10, 50]:
+    #     temp = credit_card.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
+    #
+    #     temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
+    #     temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+    #     temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
+    #
+    #     aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
-        temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
-        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
-        temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
-
-        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
-
-    print(aggegration.head())
     return aggegration
 
 
