@@ -15,9 +15,9 @@ warnings.simplefilter("ignore")
 
 def create_classifier():
     return lgb.LGBMClassifier(
-        nthread=4,
+        nthread=3,
         n_estimators=5000,
-        learning_rate=0.05,
+        learning_rate=0.1,
         num_leaves=34,
         colsample_bytree=0.9497036,
         subsample=0.8715623,
@@ -28,6 +28,7 @@ def create_classifier():
         min_child_weight=39.3259775,
         silent=-1,
         verbose=-1,
+        scale_pos_weight=0.08781828601,
         device="cpu"
     )
 
@@ -71,6 +72,7 @@ util.print_time(time.time()-process_start_time)
 # print(scores)
 
 # print(train_data.isnull().sum())
+print(train_data.shape)
 
 fold_importance_df = pd.DataFrame()
 fold_importance_df["feature"] = list(train_data)

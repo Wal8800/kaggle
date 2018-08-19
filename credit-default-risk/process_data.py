@@ -2,6 +2,7 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 from sklearn.preprocessing import LabelEncoder
 import numpy as np
+import gc
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
@@ -175,7 +176,7 @@ def read_and_process_installment():
     aggegration.columns = ["_".join(("INS",) + x) for x in aggegration.columns.ravel()]
 
     for last_n in [1, 10, 50]:
-        temp = installments.sort_values(["SK_ID_CURR", "DAYS_INSTALMENT"]).groupby("SK_ID_CURR").head(last_n).copy()
+        temp = installments.sort_values(["SK_ID_CURR", "DAYS_INSTALMENT"]).groupby("SK_ID_CURR").tail(last_n).copy()
         temp = temp.groupby("SK_ID_CURR").agg(column_list)
         temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
         temp = temp.add_prefix("LAST_{}_".format(last_n))
@@ -249,7 +250,7 @@ def read_and_process_pos_cash():
     aggegration.columns = ["_".join(("PSCH",) + x) for x in aggegration.columns.ravel()]
 
     for last_n in [1, 10, 50]:
-        temp = pos_cash.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
+        temp = pos_cash.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").tail(last_n).copy()
 
         temp_list = [
             "CNT_INSTALMENT",
@@ -276,6 +277,7 @@ def read_and_process_past_app():
     past_app["APP_ANNUITY_PERC"] = past_app["AMT_APPLICATION"] / past_app["AMT_ANNUITY"]
     past_app["GOOD_ANNUITY_PERC"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_ANNUITY"]
     past_app["GOOD_CRED_RATIO"] = past_app["AMT_GOODS_PRICE"] / past_app["AMT_CREDIT"]
+    past_app["PAID_CREDIT"] = past_app["AMT_APPLICATION"] / past_app["AMT_CREDIT"]
 
     aggs = [
         "mean",
@@ -297,7 +299,8 @@ def read_and_process_past_app():
         "PAST_PAYMENT_RATE": aggs,
         "APP_ANNUITY_PERC": aggs,
         "GOOD_ANNUITY_PERC": aggs,
-        "GOOD_CRED_RATIO": aggs
+        "GOOD_CRED_RATIO": aggs,
+        "PAID_CREDIT": aggs
     }
 
     aggegration = past_app.groupby("SK_ID_CURR").agg(column_aggs)
@@ -315,33 +318,13 @@ def read_and_process_past_app():
     total_prev_app["PREV_APP_REFUSE_PERC"] = total_prev_app["PREV_APP_REFUSED"] / total_prev_app["PREV_APP_COUNT"]
     aggegration = aggegration.join(other=total_prev_app, on="SK_ID_CURR", how="left")
 
-    # most recent previous application
-    most_recent_pa = past_app.sort_values(by='DAYS_DECISION', ascending=False)
-    most_recent_pa = most_recent_pa.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+    for last_n in [1, 5, 10]:
+        temp = past_app.sort_values(["SK_ID_CURR", "DAYS_DECISION"]).groupby("SK_ID_CURR").tail(last_n).copy()
+        temp = temp.groupby("SK_ID_CURR").agg(column_aggs)
+        temp.columns = ["_".join(("PA",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_".format(last_n))
 
-    recent_col_list = [
-        "AMT_ANNUITY",
-        "AMT_APPLICATION",
-        "AMT_CREDIT",
-        "AMT_DOWN_PAYMENT",
-        "AMT_GOODS_PRICE",
-        "CNT_PAYMENT",
-        "ACT_CREDIT_PERC",
-        "DOWN_PAY_PERC",
-        "DAYS_DECISION",
-        "PAST_PAYMENT_RATE",
-        "APP_ANNUITY_PERC",
-        "GOOD_ANNUITY_PERC",
-        "GOOD_CRED_RATIO"
-    ]
-
-    most_recent_pa = most_recent_pa[recent_col_list].copy()
-    most_recent_pa["TGT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_CREDIT"]
-    most_recent_pa["ACT_PAYMENT_RATE"] = most_recent_pa["AMT_ANNUITY"] / most_recent_pa["AMT_APPLICATION"]
-    most_recent_pa["PAID_CREDIT"] = most_recent_pa["AMT_APPLICATION"] / most_recent_pa["AMT_CREDIT"]
-    most_recent_pa = most_recent_pa.add_prefix("RECENT_PA_")
-
-    aggegration = aggegration.join(other=most_recent_pa, on="SK_ID_CURR", how="left")
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
     return aggegration
 
@@ -377,6 +360,7 @@ def read_and_process_bureau():
     bureau_status["CLOSED_ACTIVE_RATIO"] = bureau_status["CREDIT_ACTIVE_Active"] / bureau_status["CREDIT_ACTIVE_Closed"]
 
     aggegration = aggegration.join(other=bureau_status, on="SK_ID_CURR", how="left")
+    del bureau_status
 
     # aggregation of monthly balance status
     bureau_balance = pd.read_csv(folder + "bureau_balance.csv")
@@ -388,11 +372,13 @@ def read_and_process_bureau():
     bureau_balance_pivot = bureau_balance_pivot.rename_axis(None, axis=1)
     bureau_balance_pivot.columns = ["BU_STATUS_" + x for x in bureau_balance_pivot.columns]
     aggegration = aggegration.join(other=bureau_balance_pivot, on="SK_ID_CURR", how="left")
+    del bureau_balance_pivot
 
     # finding credit for active bureau
     active_bu_credit_sum = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR")["AMT_CREDIT_SUM", "AMT_CREDIT_SUM_DEBT"].sum()
     active_bu_credit_sum = active_bu_credit_sum.add_prefix("ACTIVE_")
     aggegration = aggegration.join(other=active_bu_credit_sum, on="SK_ID_CURR", how="left")
+    del active_bu_credit_sum
 
     # number of bureau credit applied in the last 60, 120, 180, 240
     day_scale = 180
@@ -420,29 +406,44 @@ def read_and_process_bureau():
     closed_aggegration = closed_credit.groupby("SK_ID_CURR").agg(closed_aggs)
     closed_aggegration.columns = ["_".join(("BU",) + x) for x in closed_aggegration.columns.ravel()]
     aggegration = aggegration.join(closed_aggegration, on="SK_ID_CURR", how="left")
+    del closed_aggegration
+    gc.collect()
 
-    # status of their most recent bureau credit
-    most_recent_bureau = bureau.sort_values(by='DAYS_CREDIT')
-    most_recent_bureau = most_recent_bureau.drop_duplicates('SK_ID_CURR').set_index("SK_ID_CURR")
+    for last_n in [1, 5, 10]:
+        temp = bureau.sort_values(["SK_ID_CURR", "DAYS_CREDIT"]).groupby("SK_ID_CURR").head(last_n).copy()
+        temp = temp.groupby("SK_ID_CURR").agg(aggs)
+        temp.columns = ["_".join(("BU",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_".format(last_n))
 
-    most_recent_col_list = [
-        "DAYS_CREDIT",
-        "DAYS_CREDIT_ENDDATE",
-        "DAYS_ENDDATE_FACT",
-        "CREDIT_DAY_OVERDUE",
-        "CNT_CREDIT_PROLONG",
-        "AMT_CREDIT_SUM",
-        "AMT_CREDIT_SUM_DEBT",
-        "AMT_CREDIT_SUM_LIMIT",
-        "AMT_CREDIT_SUM_OVERDUE"
-    ]
-    most_recent_bureau = most_recent_bureau[most_recent_col_list].copy()
-    most_recent_bureau = most_recent_bureau.add_prefix("RECENT_BU_")
-
-    aggegration = aggegration.join(most_recent_bureau, on="SK_ID_CURR", how="left")
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
     return aggegration
 
 
+def calculate_scale_pos_weight(train_data):
+    positive_case = train_data[train_data["TARGET"] == 0]
+    negative_case = train_data[train_data["TARGET"] == 1]
+
+    print(positive_case.shape)
+    print(negative_case.shape)
+
+    return positive_case.shape[0] / negative_case.shape[0]
+
+
+def process_data_correlation():
+    train_data = read_train()
+    train_label = train_data["TARGET"]
+    train_data.drop("TARGET", axis=1, inplace=True)
+
+    train_data, cate_feats = process_data(train_data, always_label_encode=True)
+
+    train_data["TARGET"] = train_label
+
+    correlations = train_data.corr()["TARGET"].sort_values()
+
+    print('Most Positive Correlations:\n', correlations.tail(15))
+    print('\nMost Negative Correlations:\n', correlations.head(15))
+
+
 if __name__ == "__main__":
-    read_and_process_bureau()
+    read_and_process_installment()
