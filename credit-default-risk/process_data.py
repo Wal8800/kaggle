@@ -34,7 +34,10 @@ main_feature_names = [
     "AMT_GOODS_PRICE",
     "CNT_CHILDREN",
     "CNT_FAM_MEMBERS",
-    "REGION_POPULATION_RELATIVE"
+    "REGION_POPULATION_RELATIVE",
+    "NAME_CONTRACT_TYPE",
+    "OCCUPATION_TYPE",
+    "ORGANIZATION_TYPE"
 ]
 
 _cache_installment_result = None
@@ -86,6 +89,10 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features["EXT_1_3_DIV"] = features["EXT_SOURCE_1"] / features["EXT_SOURCE_3"]
     features["EXT_2_3_DIV"] = features["EXT_SOURCE_2"] / features["EXT_SOURCE_3"]
 
+    features["EXT_1_2_MUL"] = features["EXT_SOURCE_1"] * features["EXT_SOURCE_2"]
+    features["EXT_1_3_MUL"] = features["EXT_SOURCE_1"] * features["EXT_SOURCE_3"]
+    features["EXT_2_3_MUL"] = features["EXT_SOURCE_2"] * features["EXT_SOURCE_3"]
+
     global _cache_installment_result, _cache_credit_card_result, \
         _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
 
@@ -105,14 +112,30 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
         _cache_bureau_result = read_and_process_bureau()
 
     features = features.set_index("SK_ID_CURR")
+
     features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
+    _cache_installment_result = None
+    gc.collect()
+
     features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
+    _cache_credit_card_result = None
+    gc.collect()
+
     features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
+    _cache_pos_cash_result = None
+    gc.collect()
+
     features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
+    _cache_pa_result = None
+    gc.collect()
+
     features["PA_PAYMENT_RATE_MED_PERC"] = features["PA_PAST_PAYMENT_RATE_median"] / features["PAYMENT_RATE"]
     features["PA_PAYMENT_RATE_MEAN_PERC"] = features["PA_PAST_PAYMENT_RATE_mean"] / features["PAYMENT_RATE"]
 
     features = features.join(other=_cache_bureau_result, on="SK_ID_CURR", how="left")
+    _cache_bureau_result = None
+    gc.collect()
+
     features["BU_CREDIT_INCOME_PERC"] = features["ACTIVE_AMT_CREDIT_SUM"] / features["AMT_INCOME_TOTAL"]
     features["TOTAL_CREDIT"] = features["ACTIVE_AMT_CREDIT_SUM"] + features['AMT_CREDIT']
     features["TOTAL_CREDIT_INCOME_PERC"] = features["TOTAL_CREDIT"] / features["AMT_INCOME_TOTAL"]
@@ -215,14 +238,14 @@ def read_and_process_credit_card():
     aggegration = credit_card.groupby("SK_ID_CURR")[column_list].agg(aggs)
     aggegration.columns = ["_".join(("CC",) + x) for x in aggegration.columns.ravel()]
 
-    # for last_n in [1, 10, 50]:
-    #     temp = credit_card.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").head(last_n).copy()
-    #
-    #     temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
-    #     temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
-    #     temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
-    #
-    #     aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+    for last_n in [1, 10, 50]:
+        temp = credit_card.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"]).groupby("SK_ID_CURR").tail(last_n).copy()
+
+        temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
+        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
     return aggegration
 
@@ -361,6 +384,7 @@ def read_and_process_bureau():
 
     aggegration = aggegration.join(other=bureau_status, on="SK_ID_CURR", how="left")
     del bureau_status
+    gc.collect()
 
     # aggregation of monthly balance status
     bureau_balance = pd.read_csv(folder + "bureau_balance.csv")
@@ -373,12 +397,14 @@ def read_and_process_bureau():
     bureau_balance_pivot.columns = ["BU_STATUS_" + x for x in bureau_balance_pivot.columns]
     aggegration = aggegration.join(other=bureau_balance_pivot, on="SK_ID_CURR", how="left")
     del bureau_balance_pivot
+    gc.collect()
 
     # finding credit for active bureau
     active_bu_credit_sum = bureau.loc[bureau["CREDIT_ACTIVE"] == "Active"].groupby("SK_ID_CURR")["AMT_CREDIT_SUM", "AMT_CREDIT_SUM_DEBT"].sum()
     active_bu_credit_sum = active_bu_credit_sum.add_prefix("ACTIVE_")
     aggegration = aggegration.join(other=active_bu_credit_sum, on="SK_ID_CURR", how="left")
     del active_bu_credit_sum
+    gc.collect()
 
     # number of bureau credit applied in the last 60, 120, 180, 240
     day_scale = 180
@@ -416,6 +442,8 @@ def read_and_process_bureau():
         temp = temp.add_prefix("LAST_{}_".format(last_n))
 
         aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+        del temp
+        gc.collect()
 
     return aggegration
 

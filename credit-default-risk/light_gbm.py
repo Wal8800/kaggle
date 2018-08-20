@@ -15,13 +15,13 @@ warnings.simplefilter("ignore")
 
 def create_classifier():
     return lgb.LGBMClassifier(
-        nthread=3,
+        nthread=4,
         n_estimators=5000,
         learning_rate=0.1,
         num_leaves=34,
         colsample_bytree=0.9497036,
         subsample=0.8715623,
-        max_depth=8,
+        max_depth=5,
         reg_alpha=0.041545473,
         reg_lambda=0.0735294,
         min_split_gain=0.0222415,
@@ -127,5 +127,5 @@ fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
 print(fold_importance_df.head(50))
 
-create_submission(sub_preds)
+# create_submission(sub_preds)
 # pred_with_full_data()
