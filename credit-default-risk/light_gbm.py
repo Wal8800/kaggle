@@ -9,13 +9,16 @@ import pprint
 import time
 import datetime
 import warnings
+import multiprocessing
 
 warnings.simplefilter("ignore")
+
+print("CPU count {}".format(multiprocessing.cpu_count()))
 
 
 def create_classifier():
     return lgb.LGBMClassifier(
-        nthread=4,
+        nthread=multiprocessing.cpu_count(),
         n_estimators=5000,
         learning_rate=0.1,
         num_leaves=34,
@@ -127,5 +130,5 @@ fold_importance_df["avg_importance"] = fold_importance_df.mean(axis=1)
 fold_importance_df.sort_values("avg_importance", ascending=False, inplace=True)
 print(fold_importance_df.head(50))
 
-# create_submission(sub_preds)
+create_submission(sub_preds)
 # pred_with_full_data()

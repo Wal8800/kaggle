@@ -16,8 +16,6 @@ warnings.simplefilter("ignore")
 def create_nn_model():
     model = keras.Sequential()
     model.add(keras.layers.Dense(1024, activation='relu', input_dim=3))
-    model.add(keras.layers.Dense(1024, activation='relu'))
-    model.add(keras.layers.Dense(1024, activation='relu'))
     model.add(keras.layers.Dense(512, activation='relu'))
     model.add(keras.layers.Dense(256, activation='relu'))
     model.add(keras.layers.Dense(128, activation='relu'))
