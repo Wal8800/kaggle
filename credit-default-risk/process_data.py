@@ -3,10 +3,12 @@ from pandas.api.types import is_numeric_dtype
 from sklearn.preprocessing import LabelEncoder
 import numpy as np
 import gc
+import concurrent.futures
+import time
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
-pd.set_option('display.width', 10000)
+pd.set_option('display.width', 100000)
 
 folder = "data/"
 ignore_feat = [
@@ -39,12 +41,6 @@ main_feature_names = [
     "ORGANIZATION_TYPE"
 ]
 
-_cache_installment_result = None
-_cache_credit_card_result = None
-_cache_pos_cash_result = None
-_cache_pa_result = None
-_cache_bureau_result = None
-
 
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
@@ -54,14 +50,12 @@ def read_test():
     return pd.read_csv(folder + "application_test.csv")
 
 
-def process_data(data, always_label_encode=False, drop_null_columns=False,
-                 fill_null_columns=False):
-    features = data[main_feature_names].copy()
+def process_train(features):
+    features = features[main_feature_names].copy()
 
     features["YEARS_BIRTH"] = features["DAYS_BIRTH"] / -365
 
     features['DAYS_EMPLOYED'].replace({365243: np.nan}, inplace=True)
-    features['DAYS_EMPLOYED_ANOM'] = features["DAYS_EMPLOYED"] == 365243
 
     features['CREDIT_INCOME_PERCENT'] = features['AMT_CREDIT'] / features['AMT_INCOME_TOTAL']
     features['ANNUITY_INCOME_PERCENT'] = features['AMT_ANNUITY'] / features['AMT_INCOME_TOTAL']
@@ -70,11 +64,13 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
     features['CREDIT_TO_GOOD_RATIO'] = features["AMT_CREDIT"] / features["AMT_GOODS_PRICE"]
 
-    features["CREDIT_PER_CHILD"] = features["AMT_CREDIT"] / features["CNT_CHILDREN"]
-    features["INCOME_PER_CHILD"] = features["AMT_INCOME_TOTAL"] / features["CNT_CHILDREN"]
-    features["CREDIT_PER_FAM"] = features["AMT_CREDIT"] / features["CNT_FAM_MEMBERS"]
-    features["INCOME_PER_FAM"] = features["AMT_INCOME_TOTAL"] / features["CNT_FAM_MEMBERS"]
-    features["NON_CHILD_MEMBER_RATIO"] = features["CNT_CHILDREN"] / features["CNT_FAM_MEMBERS"]
+    features["CREDIT_PER_CHILD"] = features["CNT_CHILDREN"] / features["AMT_CREDIT"]
+    features["INCOME_PER_CHILD"] = features["CNT_CHILDREN"] / features["AMT_INCOME_TOTAL"]
+    features["PAYMENT_RATE_PER_CHILD"] = features["CNT_CHILDREN"] / features["PAYMENT_RATE"]
+    features["CREDIT_PER_FAM"] = features["CNT_FAM_MEMBERS"] / features["AMT_CREDIT"]
+    features["INCOME_PER_FAM"] = features["CNT_FAM_MEMBERS"] / features["AMT_INCOME_TOTAL"]
+    features["PAYMENT_RATE_PER_FAM"] = features["CNT_FAM_MEMBERS"] / features["PAYMENT_RATE"]
+    features["NON_CHILD_MEMBER_DIFF"] = features["CNT_CHILDREN"] - features["CNT_FAM_MEMBERS"]
 
     features["CREDIT_PER_POP"] = features["AMT_CREDIT"] / features["REGION_POPULATION_RELATIVE"]
     features["INCOME_PER_POP"] = features["AMT_INCOME_TOTAL"] / features["REGION_POPULATION_RELATIVE"]
@@ -96,49 +92,14 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features["EXT_2_REGION_RATING_MUL"] = features["EXT_SOURCE_2"] * features["REGION_RATING_CLIENT_W_CITY"]
     features["EXT_3_REGION_RATING_MUL"] = features["EXT_SOURCE_3"] * features["REGION_RATING_CLIENT_W_CITY"]
 
-    features["EXT_1_REGION_RATING_DIFF"] = features["EXT_SOURCE_1"] * features["REGION_RATING_CLIENT_W_CITY"]
-    features["EXT_2_REGION_RATING_DIFF"] = features["EXT_SOURCE_2"] * features["REGION_RATING_CLIENT_W_CITY"]
-    features["EXT_3_REGION_RATING_DIFF"] = features["EXT_SOURCE_3"] * features["REGION_RATING_CLIENT_W_CITY"]
+    features['NEW_EXT_SOURCES_MEAN'] = features[['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
 
-    global _cache_installment_result, _cache_credit_card_result, \
-        _cache_pos_cash_result, _cache_pa_result, _cache_bureau_result
+    return features
 
-    if _cache_installment_result is None:
-        _cache_installment_result = read_and_process_installment()
 
-    if _cache_credit_card_result is None:
-        _cache_credit_card_result = read_and_process_credit_card()
-
-    if _cache_pos_cash_result is None:
-        _cache_pos_cash_result = read_and_process_pos_cash()
-
-    if _cache_pa_result is None:
-        _cache_pa_result = read_and_process_past_app()
-
-    if _cache_bureau_result is None:
-        _cache_bureau_result = read_and_process_bureau()
-
-    features = features.set_index("SK_ID_CURR")
-
-    features = features.join(other=_cache_installment_result, on="SK_ID_CURR", how="left")
-    _cache_installment_result = None
-
-    features = features.join(other=_cache_credit_card_result, on="SK_ID_CURR", how="left")
-    _cache_credit_card_result = None
-
-    features = features.join(other=_cache_pos_cash_result, on="SK_ID_CURR", how="left")
-    _cache_pos_cash_result = None
-
-    features = features.join(other=_cache_pa_result, on="SK_ID_CURR", how="left")
-    _cache_pa_result = None
-    gc.collect()
-
+def post_side_data(features):
     features["PA_PAYMENT_RATE_MED_PERC"] = features["PA_PAST_PAYMENT_RATE_median"] / features["PAYMENT_RATE"]
     features["PA_PAYMENT_RATE_MEAN_PERC"] = features["PA_PAST_PAYMENT_RATE_mean"] / features["PAYMENT_RATE"]
-
-    features = features.join(other=_cache_bureau_result, on="SK_ID_CURR", how="left")
-    _cache_bureau_result = None
-    gc.collect()
 
     features["BU_CREDIT_INCOME_PERC"] = features["ACTIVE_AMT_CREDIT_SUM"] / features["AMT_INCOME_TOTAL"]
     features["TOTAL_CREDIT"] = features["ACTIVE_AMT_CREDIT_SUM"] + features['AMT_CREDIT']
@@ -148,12 +109,19 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
     features["BU_ANNUITY_INCOME_PERC_MED"] = features["BU_CLOSED_ANNUITY_median"] / features["AMT_INCOME_TOTAL"]
     features["BU_ANNUITY_INCOME_PERC_MEA"] = features["BU_CLOSED_ANNUITY_mean"] / features["AMT_INCOME_TOTAL"]
 
-    categorical_feat_list = []
+    return features
 
+
+def drop_data(features):
     for feat in ignore_feat:
         if feat in list(features):
-            features.drop(feat, inplace=True)
+            features.drop(feat, inplace=True, axis=1)
 
+    return features
+
+
+def process_categorical_data(features, drop_null_columns=False, always_label_encode=False, fill_null_columns=False):
+    categorical_feat_list = []
     # categorical data into numerical
     for column_name in features:
         if features[column_name].isnull().any() and drop_null_columns:
@@ -177,6 +145,33 @@ def process_data(data, always_label_encode=False, drop_null_columns=False,
             features.drop(column_name, axis=1, inplace=True)
 
     return features, categorical_feat_list
+
+
+def process_data(train_data, test_data, always_label_encode=False, drop_null_columns=False,
+                 fill_null_columns=False):
+
+    train_data = process_train(train_data)
+    test_data = process_train(test_data)
+
+    train_data, test_data = concurrent_process_and_join_side_data(train_data, test_data)
+
+    train_data = post_side_data(train_data)
+    test_data = post_side_data(test_data)
+
+    train_data = drop_data(train_data)
+    test_data = drop_data(test_data)
+
+    train_data, categorical_feat_list = process_categorical_data(train_data,
+                                                                 drop_null_columns=drop_null_columns,
+                                                                 always_label_encode=always_label_encode,
+                                                                 fill_null_columns=fill_null_columns)
+
+    test_data, _ = process_categorical_data(test_data,
+                                            drop_null_columns=drop_null_columns,
+                                            always_label_encode=always_label_encode,
+                                            fill_null_columns=fill_null_columns)
+
+    return train_data, test_data, categorical_feat_list
 
 
 def read_and_process_installment():
@@ -479,5 +474,41 @@ def process_data_correlation():
     print('\nMost Negative Correlations:\n', correlations.head(15))
 
 
+def concurrent_process_and_join_side_data(input_train_data, input_test_data):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        installment = executor.submit(read_and_process_installment)
+        cc = executor.submit(read_and_process_credit_card)
+        pos_cash = executor.submit(read_and_process_pos_cash)
+        past_pa = executor.submit(read_and_process_past_app)
+        bu = executor.submit(read_and_process_bureau)
+
+        data_to_csv = {
+            installment: "installment",
+            cc: "cc",
+            pos_cash: "pos_cash",
+            past_pa: "past_pa",
+            bu: "bu"
+        }
+
+        for future in concurrent.futures.as_completed(data_to_csv):
+            data_name = data_to_csv[future]
+            try:
+                data = future.result()
+            except Exception as exc:
+                print('%r generated an exception: %s' % (data_name, exc))
+            else:
+                input_train_data = input_train_data.join(other=data, on="SK_ID_CURR", how="left")
+                input_test_data = input_test_data.join(other=data, on="SK_ID_CURR", how="left")
+
+    return input_train_data, input_test_data
+
+
 if __name__ == "__main__":
-    read_and_process_installment()
+    train = read_train()
+    test_data_raw = read_test()
+    start_time = time.time()
+    train, test, cate_feats = process_data(train, test_data_raw, always_label_encode=True)
+    print(time.time()-start_time)
+    print(train.shape)
+    print(test.shape)
+    print(train.head())

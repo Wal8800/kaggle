@@ -65,8 +65,7 @@ train_label = train_data["TARGET"]
 train_data.drop("TARGET", axis=1, inplace=True)
 
 process_start_time = time.time()
-train_data, cate_feats = process_data.process_data(train_data, always_label_encode=True)
-test_data, _ = process_data.process_data(test_data_raw, always_label_encode=True)
+train_data, test_data, cate_feats = process_data.process_data(train_data, test_data_raw, always_label_encode=True)
 util.print_time(time.time()-process_start_time)
 
 # pp = pprint.PrettyPrinter(width=200, compact=True)
