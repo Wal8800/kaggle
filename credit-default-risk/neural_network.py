@@ -13,6 +13,7 @@ import warnings
 
 warnings.simplefilter("ignore")
 
+
 class RocCallback(Callback):
     def __init__(self,training_data,validation_data):
         self.x = training_data[0]

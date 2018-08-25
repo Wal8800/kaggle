@@ -42,6 +42,12 @@ main_feature_names = [
 ]
 
 
+_cache_installment = None
+_cache_credit_card = None
+_cache_pos_cash = None
+_cache_pa = None
+
+
 def read_train():
     return pd.read_csv(folder + "application_train.csv")
 
@@ -171,11 +177,44 @@ def process_data(train_data, test_data, always_label_encode=False, drop_null_col
                                             always_label_encode=always_label_encode,
                                             fill_null_columns=fill_null_columns)
 
+    clear_cache()
     return train_data, test_data, categorical_feat_list
 
 
+def read_installment():
+    global _cache_installment
+    if _cache_installment is not None:
+        return _cache_installment
+    else:
+        return pd.read_csv(folder + "installments_payments.csv")
+
+
+def read_cc():
+    global _cache_credit_card
+    if _cache_credit_card is not None:
+        return _cache_credit_card
+    else:
+        return pd.read_csv(folder + "credit_card_balance.csv")
+
+
+def read_pos_cash():
+    global _cache_pos_cash
+    if _cache_pos_cash is not None:
+        return _cache_pos_cash
+    else:
+        return pd.read_csv(folder + "POS_CASH_balance.csv")
+
+
+def read_pa():
+    global _cache_pa
+    if _cache_pa is not None:
+        return _cache_pa
+    else:
+        return pd.read_csv(folder + "previous_application.csv")
+
+
 def read_and_process_installment():
-    installments = pd.read_csv(folder + "installments_payments.csv")
+    installments = read_installment()
 
     installments["INST_DAYS_DIFF"] = installments["DAYS_INSTALMENT"] - installments["DAYS_ENTRY_PAYMENT"]
     installments["INST_PAYMENT_DIFF"] = installments["AMT_INSTALMENT"] - installments["AMT_PAYMENT"]
@@ -206,11 +245,18 @@ def read_and_process_installment():
 
         aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
+    for last_n_days in [30, 60, 90]:
+        temp = installments[installments["DAYS_INSTALMENT"] > -last_n_days].groupby("SK_ID_CURR").agg(column_list)
+        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_DAYS_".format(last_n_days))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+
     return aggegration
 
 
 def read_and_process_credit_card():
-    credit_card = pd.read_csv(folder + "credit_card_balance.csv")
+    credit_card = read_cc()
     credit_card["CREDIT_USAGE"] = credit_card["AMT_DRAWINGS_CURRENT"] / credit_card["AMT_CREDIT_LIMIT_ACTUAL"]
     credit_card["BALANCE_LIMIT_PERCENT"] = credit_card["AMT_BALANCE"] / credit_card["AMT_CREDIT_LIMIT_ACTUAL"]
     aggs = [
@@ -243,8 +289,15 @@ def read_and_process_credit_card():
         temp = credit_card.groupby("SK_ID_CURR").tail(last_n).copy()
 
         temp = temp.groupby("SK_ID_CURR")[column_list].agg(aggs)
-        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
+        temp.columns = ["_".join(x) for x in temp.columns.ravel()]
         temp = temp.add_prefix("LAST_{}_CC_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+
+    for last_n_days in [30, 60, 90]:
+        temp = credit_card[credit_card["MONTHS_BALANCE"] > -last_n_days].groupby("SK_ID_CURR")[column_list].agg(aggs)
+        temp.columns = ["_".join(x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_DAYS_CC_".format(last_n_days))
 
         aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
@@ -252,7 +305,7 @@ def read_and_process_credit_card():
 
 
 def read_and_process_pos_cash():
-    pos_cash = pd.read_csv(folder + "POS_CASH_balance.csv")
+    pos_cash = read_pos_cash()
     pos_cash["INST_LEFT_DIFF"] = pos_cash["CNT_INSTALMENT"] - pos_cash["CNT_INSTALMENT_FUTURE"]
     aggs = [
         "mean",
@@ -274,20 +327,28 @@ def read_and_process_pos_cash():
     aggegration.columns = ["_".join(("PSCH",) + x) for x in aggegration.columns.ravel()]
 
     pos_cash = pos_cash.sort_values(["SK_ID_CURR", "MONTHS_BALANCE"])
+
+    temp_list = [
+        "CNT_INSTALMENT",
+        "CNT_INSTALMENT_FUTURE",
+        "SK_DPD",
+        "SK_DPD_DEF",
+        "INST_LEFT_DIFF"
+    ]
+
     for last_n in [1, 10, 50]:
         temp = pos_cash.groupby("SK_ID_CURR").tail(last_n).copy()
 
-        temp_list = [
-            "CNT_INSTALMENT",
-            "CNT_INSTALMENT_FUTURE",
-            "SK_DPD",
-            "SK_DPD_DEF",
-            "INST_LEFT_DIFF"
-        ]
-
         temp = temp.groupby("SK_ID_CURR")[temp_list].agg(aggs)
-        temp.columns = ["_".join(("INS",) + x) for x in temp.columns.ravel()]
-        temp = temp.add_prefix("LAST_{}_".format(last_n))
+        temp.columns = ["_".join(x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_PSCH_".format(last_n))
+
+        aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
+
+    for last_n_days in [30, 60, 90]:
+        temp = pos_cash[pos_cash["MONTHS_BALANCE"] > -last_n_days].groupby("SK_ID_CURR")[temp_list].agg(aggs)
+        temp.columns = ["_".join(x) for x in temp.columns.ravel()]
+        temp = temp.add_prefix("LAST_{}_DAYS_PSCH_".format(last_n_days))
 
         aggegration = aggegration.join(temp, on="SK_ID_CURR", how="left")
 
@@ -295,7 +356,7 @@ def read_and_process_pos_cash():
 
 
 def read_and_process_past_app():
-    past_app = pd.read_csv(folder + "previous_application.csv")
+    past_app = read_pa()
     past_app["ACT_CREDIT_PERC"] = past_app["AMT_CREDIT"] / past_app["AMT_APPLICATION"]
     past_app["DOWN_PAY_PERC"] = past_app["AMT_DOWN_PAYMENT"] / past_app["AMT_CREDIT"]
     past_app["PAST_PAYMENT_RATE"] = past_app["AMT_ANNUITY"] / past_app["AMT_CREDIT"]
@@ -406,19 +467,6 @@ def read_and_process_bureau():
     aggegration = aggegration.join(other=active_bu_credit_sum, on="SK_ID_CURR", how="left")
     del active_bu_credit_sum
 
-    # number of bureau credit applied in the last 60, 120, 180, 240
-    # day_scale = 180
-    # for i in range(0, 5):
-    #     min_day = i*day_scale
-    #     max_day = (i + 1) * day_scale
-    #     column_name = 'BU_APPIED_COUNT_{}'.format(max_day)
-    #     number_applied = bureau[(min_day <= bureau["DAYS_CREDIT"]) & (bureau["DAYS_CREDIT"] < max_day)]
-    #     number_applied = number_applied.groupby("SK_ID_CURR").size()
-    #     number_applied = number_applied.reset_index(name=column_name).set_index("SK_ID_CURR")
-    #
-    #     aggegration = aggegration.join(other=number_applied, on="SK_ID_CURR", how="left")
-    #     aggegration[column_name] = aggegration[column_name].fillna(0)
-
     # figuring out the payment rate of the closed bureau credit
     closed_credit = bureau.loc[bureau["CREDIT_ACTIVE"] == "Closed"].copy()
     closed_credit["TIME_TAKEN"] = closed_credit["DAYS_CREDIT"] = closed_credit["DAYS_ENDDATE_FACT"]
@@ -464,7 +512,7 @@ def process_data_correlation():
     train_label = train_data["TARGET"]
     train_data.drop("TARGET", axis=1, inplace=True)
 
-    train_data, cate_feats = process_data(train_data, always_label_encode=True)
+    train_data, test_data, cate_feats = process_data(train_data, None, always_label_encode=True)
 
     train_data["TARGET"] = train_label
 
@@ -503,12 +551,33 @@ def concurrent_process_and_join_side_data(input_train_data, input_test_data):
     return input_train_data, input_test_data
 
 
+def clear_cache():
+    global _cache_pa, _cache_pos_cash, _cache_credit_card, _cache_installment
+
+    _cache_installment = None
+    _cache_credit_card = None
+    _cache_pos_cash = None
+    _cache_pa = None
+    gc.collect()
+
+
+def process_agg_pa_instal_cc_pcsh():
+    # pa = read_pa()
+    pos_cash = read_pos_cash()
+    cc = read_cc()
+    installment = read_installment()
+
+    # pa = pa[["SK_ID_PREV ", "SK_ID_CURR", "DAYS_DECISION"]]
+
+    pos_cash = pos_cash.groupby("SK_ID_PREV")
+
+    # LAST N APPLICATION NUMBER OF DAYS DUE
+
+    # AVG NUMBER OF INSTALLMENT LATE PER APPLICATION
+
+    # SUMMING SHIT UP
+
+
 if __name__ == "__main__":
-    train = read_train()
-    test_data_raw = read_test()
-    start_time = time.time()
-    train, test, cate_feats = process_data(train, test_data_raw, always_label_encode=True)
-    print(time.time()-start_time)
-    print(train.shape)
-    print(test.shape)
-    print(train.head())
+    installment = read_and_process_pos_cash()
+    print(installment.head())
