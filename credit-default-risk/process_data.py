@@ -38,6 +38,7 @@ main_feature_names = [
     "CNT_FAM_MEMBERS",
     "REGION_POPULATION_RELATIVE",
     "NAME_CONTRACT_TYPE",
+    "OCCUPATION_TYPE",
     "ORGANIZATION_TYPE"
 ]
 
@@ -69,6 +70,9 @@ def process_train(features):
     features['DAYS_EMPLOYED_PERCENT'] = features['DAYS_EMPLOYED'] / features['DAYS_BIRTH']
     features['PAYMENT_RATE'] = features['AMT_ANNUITY'] / features['AMT_CREDIT']
     features['CREDIT_TO_GOOD_RATIO'] = features["AMT_CREDIT"] / features["AMT_GOODS_PRICE"]
+
+    features['ANNUITY_EMPLOYED_PERCENT'] = features['AMT_ANNUITY'] / features['DAYS_EMPLOYED']
+    features['ANNUITY_BIRTH_PERCENT'] = features['AMT_ANNUITY'] / features['DAYS_BIRTH']
 
     features["CREDIT_PER_CHILD"] = features["CNT_CHILDREN"] / features["AMT_CREDIT"]
     features["INCOME_PER_CHILD"] = features["CNT_CHILDREN"] / features["AMT_INCOME_TOTAL"]

@@ -6,3 +6,6 @@ requirement.xt
 */data
 */__pycache__
 */output
+*/logs
+*/models
+*.pickle
