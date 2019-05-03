@@ -2,11 +2,14 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import sklearn.metrics
+import time
 
 from model import simple_2d_conv
 from tensorflow._api.v1.keras.optimizers import SGD
 from tensorflow._api.v1.keras.callbacks import TensorBoard
 from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold
+from natural import date
 
 
 # Calculate the overall lwlrap using sklearn.metrics function.
@@ -47,35 +50,41 @@ def train():
 
     print('Max row size: ', max_row, 'Max column row size', max_col)
     melspec_ndarray = reshape_dataframe_to_ndarray(train_curated_melspec).reshape((labels.shape[0], max_row, max_col, 1))
-    x_train, x_test, y_train, y_test = train_test_split(melspec_ndarray, labels, test_size=0.20)
 
-    print('Train data and label sizes: ', x_train.shape, x_test.shape)
-    print('Test data and label sizes: ', y_train.shape, y_test.shape)
+    kf = KFold(n_splits=5, shuffle=True)
+    fold_scores = []
+    current_fold = 1
+    start_time = time.time()
+    for train_index, test_index in kf.split(melspec_ndarray):
+        x_train, x_test = melspec_ndarray[train_index], melspec_ndarray[test_index]
+        y_train, y_test = labels.values[train_index], labels.values[test_index]
 
-    # create 2d conv model
-    model = simple_2d_conv((max_row, max_col, 1), len(labels.columns))
-    model.summary()
+        # create 2d conv model
+        model = simple_2d_conv((max_row, max_col, 1), len(labels.columns))
 
-    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
+        sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+        model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
 
-    callbacks = [
-        TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=32, write_graph=True, write_grads=False,
-                    write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
-                    embeddings_data=None, update_freq='epoch')
-    ]
+        callbacks = [
+            TensorBoard(log_dir='./logs', histogram_freq=0, batch_size=32, write_graph=True, write_grads=False,
+                        write_images=False, embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
+                        embeddings_data=None, update_freq='epoch')
+        ]
 
-    model.fit(x_train, y_train, batch_size=32, epochs=10, callbacks=callbacks)
-    y_pred = model.predict(x_test)
+        model.fit(x_train, y_train, batch_size=32, epochs=10, callbacks=callbacks)
+        y_pred = model.predict(x_test)
 
-    lwlrap = calculate_overall_lwlrap_sklearn(y_test.values, y_pred)
-    print("Score: ", lwlrap)
-
-    # model_json = model.to_json()
-    # with open("./models/model.json", "w") as json_file:
-    #     json_file.write(model_json)
-    #
-    # model.save_weights("./models/model.h5")
+        lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
+        print("Fold {} Score: {}".format(current_fold, lwlrap))
+        current_fold += 1
+        fold_scores.append(lwlrap)
+        # model_json = model.to_json()
+        # with open("./models/model.json", "w") as json_file:
+        #     json_file.write(model_json)
+        #
+        # model.save_weights("./models/model.h5")
+    print("Average Fold Score:", np.mean(fold_scores))
+    print("Time taken: {}".format(date.compress(time.time()-start_time)))
 
 
 if __name__ == "__main__":
