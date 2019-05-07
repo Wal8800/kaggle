@@ -32,37 +32,17 @@ def reshape_dataframe_to_ndarray(df, column_name):
     return np.array(reshape_arr)
 
 
-def train():
-    # need to set this configuration to run tensorflow RTX 2070 GPU
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.keras.backend.set_session(tf.Session(config=config))
-
-    train_curated_melspec = pd.read_pickle('padded_train_curated_melspectrogram.pickle')
-    labels = train_curated_melspec['labels'].str.get_dummies(sep=',')
-
-    # Assume the specotrgram will be the same size after processing the data
-    max_row = train_curated_melspec['mel_spectrogram'][0].shape[0]
-    max_col = train_curated_melspec['mel_spectrogram'][0].shape[1]
-
-    max_depth = 1
-    if len(train_curated_melspec['mel_spectrogram'][0].shape) > 2:
-        max_depth = train_curated_melspec['mel_spectrogram'][0].shape[2]
-
-    print('Max row size: ', max_row, 'Max column row size', max_col)
-    melspec_ndarray = reshape_dataframe_to_ndarray(train_curated_melspec, "mel_spectrogram").reshape(
-        (train_curated_melspec.shape[0], max_row, max_col, max_depth))
-
+def kfold_validation(input_data, input_labels, input_shape, num_classes):
     kf = KFold(n_splits=5, shuffle=True)
     fold_scores = []
     current_fold = 1
     start_time = time.time()
-    for train_index, test_index in kf.split(melspec_ndarray):
-        x_train, x_test = melspec_ndarray[train_index], melspec_ndarray[test_index]
-        y_train, y_test = labels.values[train_index], labels.values[test_index]
+    for train_index, test_index in kf.split(input_data):
+        x_train, x_test = input_data[train_index], input_data[test_index]
+        y_train, y_test = input_labels.values[train_index], input_labels.values[test_index]
 
         # create 2d conv model
-        model = simple_2d_conv((max_row, max_col, max_depth), len(labels.columns))
+        model = simple_2d_conv(input_shape, num_classes)
 
         sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
@@ -87,6 +67,52 @@ def train():
     print(fold_scores)
     print("Average Fold Score:", np.mean(fold_scores))
     print("Time taken: {}".format(date.compress(time.time() - start_time)))
+
+
+def train_all_data_set(input_data, input_labels, input_shape, num_classes):
+    start_time = time.time()
+    # create 2d conv model
+    model = simple_2d_conv(input_shape, num_classes)
+
+    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+    model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
+
+    callbacks = [
+        tf.keras.callbacks.TensorBoard(log_dir='./logs/all_data', histogram_freq=0,
+                                       batch_size=32, write_graph=True, write_grads=False, write_images=False,
+                                       embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
+                                       embeddings_data=None, update_freq='epoch'),
+        tf.keras.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=10),
+        tf.keras.callbacks.ModelCheckpoint('./models/model.h5',
+                                           monitor='val_loss', verbose=1, save_best_only=True)
+    ]
+
+    model.fit(input_data, input_labels, batch_size=32, epochs=50, callbacks=callbacks, validation_split=0.2)
+    print("Time taken: {}".format(date.compress(time.time() - start_time)))
+
+
+def train():
+    # need to set this configuration to run tensorflow RTX 2070 GPU
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    tf.keras.backend.set_session(tf.Session(config=config))
+
+    train_curated_melspec = pd.read_pickle('padded_train_curated_melspectrogram.pickle')
+    labels = train_curated_melspec['labels'].str.get_dummies(sep=',')
+
+    # Assume the specotrgram will be the same size after processing the data
+    max_row = train_curated_melspec['mel_spectrogram'][0].shape[0]
+    max_col = train_curated_melspec['mel_spectrogram'][0].shape[1]
+
+    max_depth = 1
+    if len(train_curated_melspec['mel_spectrogram'][0].shape) > 2:
+        max_depth = train_curated_melspec['mel_spectrogram'][0].shape[2]
+
+    print('Max row size: ', max_row, 'Max column row size', max_col)
+    melspec_ndarray = reshape_dataframe_to_ndarray(train_curated_melspec, "mel_spectrogram").reshape(
+        (train_curated_melspec.shape[0], max_row, max_col, max_depth))
+
+    kfold_validation(melspec_ndarray, labels, (max_row, max_col, max_depth), len(labels.columns))
 
 
 if __name__ == "__main__":

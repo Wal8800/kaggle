@@ -87,6 +87,17 @@ class MelSpectrogramBuilder:
             data = np.pad(logmel, ((0, 0), (offset, input_frame_length - logmel.shape[1] - offset), (0, 0)), "constant")
         return data
 
+    def get_melspec_tested(self):
+        test = pd.read_csv('../input/freesound-audio-tagging-2019/sample_submission.csv')
+        ddata = dd.from_pandas(test, npartitions=3)
+
+        res = ddata.map_partitions(
+            lambda df: df.apply((lambda row: self.generate_padded_log_melspectrogram(
+                '../input/freesound-audio-tagging-2019/test/', row.fname)), axis=1), meta=(None, 'f8')).compute(
+            scheduler='threads')
+
+        return res
+
 
 if __name__ == "__main__":
     builder = MelSpectrogramBuilder()
