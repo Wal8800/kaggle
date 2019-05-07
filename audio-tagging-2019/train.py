@@ -45,9 +45,13 @@ def train():
     max_row = train_curated_melspec['mel_spectrogram'][0].shape[0]
     max_col = train_curated_melspec['mel_spectrogram'][0].shape[1]
 
+    max_depth = 1
+    if len(train_curated_melspec['mel_spectrogram'][0].shape) > 2:
+        max_depth = train_curated_melspec['mel_spectrogram'][0].shape[2]
+
     print('Max row size: ', max_row, 'Max column row size', max_col)
     melspec_ndarray = reshape_dataframe_to_ndarray(train_curated_melspec, "mel_spectrogram").reshape(
-        (labels.shape[0], max_row, max_col, 1))
+        (train_curated_melspec.shape[0], max_row, max_col, max_depth))
 
     kf = KFold(n_splits=5, shuffle=True)
     fold_scores = []
@@ -58,7 +62,7 @@ def train():
         y_train, y_test = labels.values[train_index], labels.values[test_index]
 
         # create 2d conv model
-        model = simple_2d_conv((max_row, max_col, 1), len(labels.columns))
+        model = simple_2d_conv((max_row, max_col, max_depth), len(labels.columns))
 
         sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
         model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
@@ -69,17 +73,18 @@ def train():
                                            embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
                                            embeddings_data=None, update_freq='epoch'),
             tf.keras.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=10),
-            # tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
-            #                                    monitor='val_loss', verbose=1, save_best_only=True)
+            tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
+                                               monitor='val_loss', verbose=1, save_best_only=True)
         ]
 
-        model.fit(x_train, y_train, batch_size=32, epochs=10, callbacks=callbacks, validation_split=0.2)
+        model.fit(x_train, y_train, batch_size=32, epochs=50, callbacks=callbacks, validation_split=0.2)
         y_pred = model.predict(x_test)
 
         lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
         print("Fold {} Score: {}".format(current_fold, lwlrap))
         current_fold += 1
         fold_scores.append(lwlrap)
+    print(fold_scores)
     print("Average Fold Score:", np.mean(fold_scores))
     print("Time taken: {}".format(date.compress(time.time() - start_time)))
 
