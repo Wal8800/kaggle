@@ -23,6 +23,32 @@ def simple_2d_conv(input_shape, num_classes) -> tf.keras.Sequential:
     return model
 
 
+def keras_cnn(input_shape, num_classes):
+    model = tf.keras.Sequential()
+    model.add(Conv2D(32, (3, 3), padding='same', input_shape=input_shape))
+    model.add(Activation('relu'))
+    model.add(Conv2D(32, (3, 3)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Conv2D(64, (3, 3), padding='same'))
+    model.add(Activation('relu'))
+    model.add(Conv2D(64, (3, 3)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Dropout(0.25))
+
+    model.add(Flatten())
+    model.add(Dense(512))
+    model.add(Activation('relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes))
+    model.add(Activation('softmax'))
+
+    return model
+
+
 def resnet_layer(inputs,
                  num_filters=16,
                  kernel_size=3,
@@ -69,7 +95,7 @@ def resnet_layer(inputs,
 
 
 # from https://keras.io/examples/cifar10_resnet/
-def resnet_v1(input_shape, depth, num_classes=10):
+def resnet_v1(input_shape, depth, num_classes):
     """ResNet Version 1 Model builder [a]
 
     Stacks of 2 x (3 x 3) Conv2D-BN-ReLU

@@ -7,7 +7,7 @@ import natural.date
 
 
 class MelSpectrogramBuilder:
-    def __init__(self, frame_weight=80, frame_shift=10, n_mels=64, sampling_rate=44100, audio_duration=2):
+    def __init__(self, frame_weight=80, frame_shift=10, n_mels=128, sampling_rate=44100, audio_duration=2):
         self.n_fft = int(frame_weight / 1000 * sampling_rate)
         self.n_mels = n_mels
         self.frame_weigth = frame_weight
@@ -98,18 +98,21 @@ class MelSpectrogramBuilder:
 
         return res
 
+    def generate_and_augment_melspectrogram(self, directory, fname):
+        logmel = self.generate_log_melspectrogram(directory, fname)
+        delta = librosa.feature.delta(logmel)
+        accelerate = librosa.feature.delta(logmel, order=2)
+
+        return np.stack((logmel, delta, accelerate))
+
 
 if __name__ == "__main__":
-    builder = MelSpectrogramBuilder()
-    padded_gram = builder.generate_padded_log_melspectrogram('data/train_curated/', '0a9bebde.wav')
-    print(padded_gram.shape)
     start_time = time.time()
-    builder.generate_padded_melspec_df_pickle('padded_train_curated_melspectrogram.pickle')
+    output_fname = "padded_train_curated_melspectrogram.pickle"
+    builder = MelSpectrogramBuilder()
+    builder.generate_padded_melspec_df_pickle(output_fname)
     print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
-    melspec = pd.read_pickle('padded_train_curated_melspectrogram.pickle')
+    melspec = pd.read_pickle("padded_train_curated_melspectrogram.pickle")
     print(melspec.head())
-    print(melspec.shape)
-    print(melspec['mel_spectrogram'][0].shape)
-    print(melspec['mel_spectrogram'][0])
-    print(melspec['mel_spectrogram'][1].shape)
-    print(melspec['mel_spectrogram'][1])
+
+

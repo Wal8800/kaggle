@@ -4,7 +4,7 @@ import tensorflow as tf
 import sklearn.metrics
 import time
 
-from model import simple_2d_conv
+from model import simple_2d_conv, keras_cnn
 from tensorflow._api.v1.keras.optimizers import SGD
 from sklearn.model_selection import KFold
 from natural import date
@@ -32,6 +32,31 @@ def reshape_dataframe_to_ndarray(df, column_name):
     return np.array(reshape_arr)
 
 
+def lr_schedule(epoch):
+    """Learning Rate Schedule
+
+    Learning rate is scheduled to be reduced after 80, 120, 160, 180 epochs.
+    Called automatically every epoch as part of callbacks during training.
+
+    # Arguments
+        epoch (int): The number of epochs
+
+    # Returns
+        lr (float32): learning rate
+    """
+    lr = 1e-2
+    if epoch > 180:
+        lr *= 0.5e-2
+    elif epoch > 160:
+        lr *= 1e-2
+    elif epoch > 120:
+        lr *= 1e-2
+    elif epoch > 80:
+        lr *= 1e-1
+    print('Learning rate: ', lr)
+    return lr
+
+
 def kfold_validation(input_data, input_labels, input_shape, num_classes):
     kf = KFold(n_splits=5, shuffle=True)
     fold_scores = []
@@ -42,10 +67,10 @@ def kfold_validation(input_data, input_labels, input_shape, num_classes):
         y_train, y_test = input_labels.values[train_index], input_labels.values[test_index]
 
         # create 2d conv model
-        model = simple_2d_conv(input_shape, num_classes)
+        model = keras_cnn(input_shape, num_classes)
 
-        sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-        model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
+        opt = tf.keras.optimizers.Adam(lr=0.0001, decay=1e-5)
+        model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
 
         callbacks = [
             tf.keras.callbacks.TensorBoard(log_dir='./logs/fold_{}'.format(current_fold), histogram_freq=0,
@@ -57,7 +82,7 @@ def kfold_validation(input_data, input_labels, input_shape, num_classes):
                                                monitor='val_loss', verbose=1, save_best_only=True)
         ]
 
-        model.fit(x_train, y_train, batch_size=32, epochs=50, callbacks=callbacks, validation_split=0.2)
+        model.fit(x_train, y_train, batch_size=32, epochs=200, callbacks=callbacks, validation_split=0.2)
         y_pred = model.predict(x_test)
 
         lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
@@ -75,19 +100,19 @@ def train_all_data_set(input_data, input_labels, input_shape, num_classes):
     model = simple_2d_conv(input_shape, num_classes)
 
     sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='binary_crossentropy', optimizer=sgd, metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=tf.keras.optimizers.Adam(lr=0.01), metrics=['accuracy'])
 
     callbacks = [
         tf.keras.callbacks.TensorBoard(log_dir='./logs/all_data', histogram_freq=0,
                                        batch_size=32, write_graph=True, write_grads=False, write_images=False,
                                        embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
                                        embeddings_data=None, update_freq='epoch'),
-        tf.keras.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=10),
+        # tf.keras.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=10),
         tf.keras.callbacks.ModelCheckpoint('./models/model.h5',
-                                           monitor='val_loss', verbose=1, save_best_only=True)
+                                           monitor='val_loss', verbose=1, save_best_only=True),
     ]
 
-    model.fit(input_data, input_labels, batch_size=32, epochs=50, callbacks=callbacks, validation_split=0.2)
+    model.fit(input_data, input_labels, batch_size=32, epochs=200, callbacks=callbacks, validation_split=0.2)
     print("Time taken: {}".format(date.compress(time.time() - start_time)))
 
 
@@ -113,6 +138,8 @@ def train():
         (train_curated_melspec.shape[0], max_row, max_col, max_depth))
 
     kfold_validation(melspec_ndarray, labels, (max_row, max_col, max_depth), len(labels.columns))
+
+    # train_all_data_set(melspec_ndarray, labels, (max_row, max_col, max_depth), len(labels.columns))
 
 
 if __name__ == "__main__":
