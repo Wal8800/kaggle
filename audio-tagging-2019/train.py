@@ -17,50 +17,57 @@ def kfold_validation(input_data, input_labels):
     current_fold = 1
     start_time = time.time()
     for train_index, test_index in kf.split(input_data):
+        tf.keras.backend.clear_session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        tf.keras.backend.set_session(tf.Session(config=config))
+
         x_train, x_test = input_data[train_index], input_data[test_index]
         y_train, y_test = input_labels.values[train_index], input_labels.values[test_index]
 
         data_dir = "processed/melspectrogram/"
 
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
-        # train_generator = MelDataGenerator(x_train, y_train, output_dir)
-        # x, y = train_generator[0]
-        # max_row = x[0].shape[0]
-        # max_column = x[0].shape[1]
-        # max_depth = x[0].shape[2]
-        # val_generator = MelDataGenerator(x_val, y_val, output_dir)
 
-        x_train = load_melspectrogram_files(data_dir, x_train)
-        max_row = x_train[0].shape[0]
-        max_column = x_train[0].shape[1]
-        max_depth = x_train[0].shape[2]
-        num_classes = y_train[0].shape[0]
-        print("Traing shape: ", x_train.shape)
+        train_generator = MelDataGenerator(x_train, y_train, data_dir, batch_size=32)
+        x, y = train_generator[0]
+        max_row = x[0].shape[0]
+        max_column = x[0].shape[1]
+        max_depth = x[0].shape[2]
+        num_classes = y[0].shape[0]
 
+        # x_train = load_melspectrogram_files(data_dir, x_train)
+        # max_row = x_train[0].shape[0]
+        # max_column = x_train[0].shape[1]
+        # max_depth = x_train[0].shape[2]
+        # num_classes = y_train[0].shape[0]
+        print("Traing shape: ", (max_row, max_column, max_depth))
+
+        # val_generator = MelDataGenerator(x_val, y_val, data_dir)
         x_val = load_melspectrogram_files(data_dir, x_val)
 
         # create 2d conv model
         model = keras_cnn((max_row, max_column, max_depth), num_classes)
         opt = tf.keras.optimizers.Adam()
-        model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
+        model.compile(loss='binary_crossentropy', optimizer=opt)
 
         callbacks = [
             # tf.keras.callbacks.TensorBoard(log_dir='./logs/fold_{}'.format(current_fold), histogram_freq=0,
             #                                batch_size=32, write_graph=True, write_grads=False, write_images=False,
             #                                embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
             #                                embeddings_data=None, update_freq='epoch'),
-            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=10)
+            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=20)
             # tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
             #                                    monitor='val_loss', verbose=1, save_best_only=True)
         ]
 
-        # model.fit_generator(train_generator, epochs=200, callbacks=callbacks, validation_data=val_generator)
-        model.fit(x_train, y_train, batch_size=32, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
+        model.fit_generator(train_generator, epochs=200, callbacks=callbacks)
+        # model.fit(x_train, y_train, batch_size=32, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
 
-        # test_generator = MelDataGenerator(x_train, y_train, "processed/melspectrogram/")
-        # y_pred = model.predict_generator(test_generator)
-        x_test = load_melspectrogram_files(data_dir, x_test)
-        y_pred = model.predict(x_test)
+        test_generator = MelDataGenerator(x_test, y_test, "processed/melspectrogram/")
+        y_pred = model.predict_generator(test_generator)
+        # x_test = load_melspectrogram_files(data_dir, x_test)
+        # y_pred = model.predict(x_test)
 
         lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
         print("Fold {} Score: {}".format(current_fold, lwlrap))
@@ -72,6 +79,11 @@ def kfold_validation(input_data, input_labels):
 
 
 def train_all_data_set(input_data, input_labels, input_shape, num_classes):
+    # need to set this configuration to run tensorflow RTX 2070 GPU
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    tf.keras.backend.set_session(tf.Session(config=config))
+
     start_time = time.time()
     # create 2d conv model
     model = simple_2d_conv(input_shape, num_classes)
@@ -94,11 +106,6 @@ def train_all_data_set(input_data, input_labels, input_shape, num_classes):
 
 
 def train():
-    # need to set this configuration to run tensorflow RTX 2070 GPU
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.keras.backend.set_session(tf.Session(config=config))
-
     train_curated = pd.read_csv("data/train_curated.csv")
     labels = train_curated['labels'].str.get_dummies(sep=',')
 

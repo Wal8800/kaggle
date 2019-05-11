@@ -49,10 +49,10 @@ class EarlyStoppingByLWLRAP(tf.keras.callbacks.Callback):
         self.stopped_epoch = 0
         self.baseline = None
         self.best = 0
-        self.monitor_op = np.less
+        self.monitor_op = np.greater
         self.best_weights = None
         self.min_delta = abs(min_delta)
-        self.min_delta *= -1
+        self.min_delta *= 1
         self.validation_data = validation_data
         self.restore_best_weights = restore_best_weights
 
@@ -63,7 +63,7 @@ class EarlyStoppingByLWLRAP(tf.keras.callbacks.Callback):
         if self.baseline is not None:
             self.best = self.baseline
         else:
-            self.best = np.Inf
+            self.best = -np.Inf
 
     def on_epoch_end(self, epoch, logs=None):
         predict = np.asarray(self.model.predict(self.validation_data[0]))
