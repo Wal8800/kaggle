@@ -49,6 +49,43 @@ def keras_cnn(input_shape, num_classes):
     return model
 
 
+def _conv_simple_block(x, n_filters):
+    x = tf.keras.layers.Convolution2D(n_filters, (3, 1), padding="same")(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    x = tf.keras.layers.Convolution2D(n_filters, (3, 1), padding="same")(x)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    x = AveragePooling2D()(x)
+
+    return x
+
+
+def create_model_simplecnn(input_shape, num_classes):
+    inp = Input(shape=input_shape)
+    #     inp = Input(shape=(None,None,3))
+    x = _conv_simple_block(inp, 64)
+    x = _conv_simple_block(x, 128)
+    x = _conv_simple_block(x, 256)
+    x = _conv_simple_block(x, 512)
+
+    x1 = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x2 = tf.keras.layers.GlobalMaxPooling2D()(x)
+    x = tf.keras.layers.Add()([x1, x2])
+
+    x = Dropout(0.2)(x)
+
+    x = Dense(128, activation='linear')(x)
+    x = tf.keras.layers.PReLU()(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.1)(x)
+    predictions = Dense(num_classes, activation='linear')(x)
+
+    model = tf.keras.models.Model(inputs=inp, outputs=predictions)
+    return model
+
+
 def resnet_layer(inputs,
                  num_filters=16,
                  kernel_size=3,

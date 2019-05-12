@@ -3,12 +3,12 @@ import numpy as np
 import tensorflow as tf
 import time
 
-from model import simple_2d_conv, keras_cnn
+from model import simple_2d_conv, keras_cnn, create_model_simplecnn
 from data_loader import MelDataGenerator, load_melspectrogram_files
 from sklearn.model_selection import KFold
 from natural import date
 from sklearn.model_selection import train_test_split
-from train_util import calculate_overall_lwlrap_sklearn, EarlyStoppingByLWLRAP
+from train_util import calculate_overall_lwlrap_sklearn, EarlyStoppingByLWLRAP, bce_with_logits, tf_lwlrap
 
 
 def kfold_validation(input_data, input_labels):
@@ -41,27 +41,28 @@ def kfold_validation(input_data, input_labels):
         # max_column = x_train[0].shape[1]
         # max_depth = x_train[0].shape[2]
         # num_classes = y_train[0].shape[0]
-        print("Traing shape: ", (max_row, max_column, max_depth))
+        print("Training shape: ", (max_row, max_column, max_depth))
 
         # val_generator = MelDataGenerator(x_val, y_val, data_dir)
         x_val = load_melspectrogram_files(data_dir, x_val)
 
         # create 2d conv model
-        model = keras_cnn((max_row, max_column, max_depth), num_classes)
+        # model = keras_cnn((max_row, max_column, max_depth), num_classes)
+        model = create_model_simplecnn((max_row, max_column, max_depth), num_classes)
         opt = tf.keras.optimizers.Adam()
-        model.compile(loss='binary_crossentropy', optimizer=opt)
+        model.compile(loss=bce_with_logits, optimizer=opt, metrics=[tf_lwlrap])
 
         callbacks = [
             # tf.keras.callbacks.TensorBoard(log_dir='./logs/fold_{}'.format(current_fold), histogram_freq=0,
             #                                batch_size=32, write_graph=True, write_grads=False, write_images=False,
             #                                embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
             #                                embeddings_data=None, update_freq='epoch'),
-            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=20)
+            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=10)
             # tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
             #                                    monitor='val_loss', verbose=1, save_best_only=True)
         ]
 
-        model.fit_generator(train_generator, epochs=200, callbacks=callbacks)
+        model.fit_generator(train_generator, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
         # model.fit(x_train, y_train, batch_size=32, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
 
         test_generator = MelDataGenerator(x_test, y_test, "processed/melspectrogram/")

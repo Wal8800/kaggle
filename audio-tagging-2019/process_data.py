@@ -9,7 +9,7 @@ import tqdm
 
 
 class MelSpectrogramBuilder:
-    def __init__(self, frame_weight=80, frame_shift=10, n_mels=128, sampling_rate=44100, audio_duration=2):
+    def __init__(self, frame_weight=80, frame_shift=10, n_mels=64, sampling_rate=44100, audio_duration=2):
         self.n_fft = int(frame_weight / 1000 * sampling_rate)
         self.n_mels = n_mels
         self.fmin = 20
