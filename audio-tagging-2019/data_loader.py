@@ -17,12 +17,14 @@ class MelDataGenerator(tf.keras.utils.Sequence):
 
     def __getitem__(self, idx):
         batch_x = self.fnames[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
-
         data = [MelDataGenerator.augment_melspectrogram(np.load(self.directory + file_name + ".pickle", allow_pickle=True))
                 for file_name in batch_x]
 
-        return np.array(data), np.array(batch_y)
+        if self.labels is None:
+            return np.array(data)
+        else:
+            batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
+            return np.array(data), np.array(batch_y)
 
     @staticmethod
     def augment_melspectrogram(logmel):

@@ -57,9 +57,9 @@ def kfold_validation(input_data, input_labels):
             #                                batch_size=32, write_graph=True, write_grads=False, write_images=False,
             #                                embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
             #                                embeddings_data=None, update_freq='epoch'),
-            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=10)
-            # tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
-            #                                    monitor='val_loss', verbose=1, save_best_only=True)
+            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=10),
+            tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
+                                               monitor='val_tf_lwlrap', verbose=1, save_best_only=True, mode='max')
         ]
 
         model.fit_generator(train_generator, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
