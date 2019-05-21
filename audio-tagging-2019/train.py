@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import time
+from os import listdir
+from os.path import isfile, join
 
 from model import simple_2d_conv, keras_cnn, create_model_simplecnn
 from data_loader import MelDataGenerator, load_melspectrogram_files
@@ -11,8 +13,16 @@ from sklearn.model_selection import train_test_split
 from train_util import calculate_overall_lwlrap_sklearn, EarlyStoppingByLWLRAP, bce_with_logits, tf_lwlrap
 
 
-def kfold_validation(input_data, input_labels):
-    kf = KFold(n_splits=5, shuffle=True)
+class TrainingConfiguration:
+    def __init__(self, generator, load_files, num_epoch=200, training_data_dir="processed/melspectrogram/"):
+        self.generator = generator
+        self.load_files = load_files
+        self.num_epoch = num_epoch
+        self.training_data_dir = training_data_dir
+
+
+def kfold_validation(train_config: TrainingConfiguration, input_data, input_labels):
+    kf = KFold(n_splits=3, shuffle=True)
     fold_scores = []
     current_fold = 1
     start_time = time.time()
@@ -25,29 +35,20 @@ def kfold_validation(input_data, input_labels):
         x_train, x_test = input_data[train_index], input_data[test_index]
         y_train, y_test = input_labels.values[train_index], input_labels.values[test_index]
 
-        data_dir = "processed/melspectrogram/"
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.3)
 
-        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
-
-        train_generator = MelDataGenerator(x_train, y_train, data_dir, batch_size=32)
+        train_generator = train_config.generator(x_train, y_train, batch_size=32, directory=train_config.training_data_dir)
         x, y = train_generator[0]
         max_row = x[0].shape[0]
         max_column = x[0].shape[1]
         max_depth = x[0].shape[2]
         num_classes = y[0].shape[0]
 
-        # x_train = load_melspectrogram_files(data_dir, x_train)
-        # max_row = x_train[0].shape[0]
-        # max_column = x_train[0].shape[1]
-        # max_depth = x_train[0].shape[2]
-        # num_classes = y_train[0].shape[0]
         print("Training shape: ", (max_row, max_column, max_depth))
 
-        # val_generator = MelDataGenerator(x_val, y_val, data_dir)
-        x_val = load_melspectrogram_files(data_dir, x_val)
+        x_val = train_config.load_files(x_val, directory=train_config.training_data_dir)
 
         # create 2d conv model
-        # model = keras_cnn((max_row, max_column, max_depth), num_classes)
         model = create_model_simplecnn((max_row, max_column, max_depth), num_classes)
         opt = tf.keras.optimizers.Adam()
         model.compile(loss=bce_with_logits, optimizer=opt, metrics=[tf_lwlrap])
@@ -57,18 +58,18 @@ def kfold_validation(input_data, input_labels):
             #                                batch_size=32, write_graph=True, write_grads=False, write_images=False,
             #                                embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None,
             #                                embeddings_data=None, update_freq='epoch'),
-            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=10),
+            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=5),
             tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
                                                monitor='val_tf_lwlrap', verbose=1, save_best_only=True, mode='max')
         ]
 
-        model.fit_generator(train_generator, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
-        # model.fit(x_train, y_train, batch_size=32, epochs=200, callbacks=callbacks, validation_data=(x_val, y_val))
+        model.fit_generator(train_generator,
+                            epochs=train_config.num_epoch,
+                            callbacks=callbacks,
+                            validation_data=(x_val, y_val))
 
-        test_generator = MelDataGenerator(x_test, y_test, "processed/melspectrogram/")
+        test_generator = train_config.generator(x_test, y_test, directory=train_config.training_data_dir)
         y_pred = model.predict_generator(test_generator)
-        # x_test = load_melspectrogram_files(data_dir, x_test)
-        # y_pred = model.predict(x_test)
 
         lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
         print("Fold {} Score: {}".format(current_fold, lwlrap))
@@ -106,13 +107,31 @@ def train_all_data_set(input_data, input_labels, input_shape, num_classes):
     print("Time taken: {}".format(date.compress(time.time() - start_time)))
 
 
+def extract_original_file_name(augmented_fname):
+    return ".".join(augmented_fname.split(".", 2)[:2])
+
+
 def train():
     train_curated = pd.read_csv("data/train_curated.csv")
-    labels = train_curated['labels'].str.get_dummies(sep=',')
+    # file_names = train_curated['fname']
+    # labels = train_curated['labels'].str.get_dummies(sep=',')
+    augmented_dir = "processed/augmented_melspectrogram/"
+    file_names = np.array([f for f in listdir(augmented_dir) if isfile(join(augmented_dir, f))])
+    augmented_labels = [train_curated[train_curated['fname'] == extract_original_file_name(file_name)]["labels"].values[0]
+                        for file_name in file_names]
+    temp = pd.DataFrame(
+        {
+            'labels': augmented_labels
+        }
+    )
+    labels = temp['labels'].str.get_dummies(sep=',')
 
-    kfold_validation(train_curated['fname'], labels)
+    train_config = TrainingConfiguration(
+        MelDataGenerator,
+        load_melspectrogram_files,
+        training_data_dir="processed/augmented_melspectrogram/")
 
-    # train_all_data_set(melspec_ndarray, labels, (max_row, max_col, max_depth), len(labels.columns))
+    kfold_validation(train_config, file_names, labels)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,8 @@ import os
 import shutil
 
 pickle_dir = "processed/test_melspectrogram/"
-test_data_dir = "../input/freesound-audio-tagging-2019/test/"
+# test_data_dir = "../input/freesound-audio-tagging-2019/test/"
+test_data_dir = "data/test/"
 
 
 class MelSpectrogramBuilder:
@@ -218,16 +219,21 @@ def predict():
     if not os.path.exists(pickle_dir):
         os.makedirs(pickle_dir)
 
-    # input_dir = "data/"
-    input_dir = "../input/freesound-audio-tagging-2019/"
+    input_dir = "data/"
+    # input_dir = "../input/freesound-audio-tagging-2019/"
     test = pd.read_csv(input_dir + "sample_submission.csv")
     generate_and_save_to_directory_test(test)
 
-    model_dir = "../input/initial-model-for-audio-2019/"
-    # model_dir = "models/"
+    # model_dir = "../input/initial-model-for-audio-2019/"
+    model_dir = "models/"
+
+    tf.keras.backend.clear_session()
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    tf.keras.backend.set_session(tf.Session(config=config))
 
     fold_prediction = []
-    for fold in range(5):
+    for fold in range(3):
         test_generator = MelDataGenerator(test["fname"], directory=pickle_dir)
         loaded_model = tf.keras.models.load_model(model_dir + "best_{}.h5".format((fold + 1)),
                                                   custom_objects={
@@ -249,7 +255,7 @@ def predict():
     submission_df.to_csv('submission.csv', index=False)
     print(submission_df.head())
 
-    shutil.rmtree("processed")
+    shutil.rmtree("processed/test_melspectrogram/")
 
 
 if __name__ == "__main__":
