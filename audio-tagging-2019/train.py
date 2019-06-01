@@ -13,11 +13,10 @@ from train_util import calculate_per_class_lwlrap
 
 
 class TrainingConfiguration:
-    def __init__(self, generator, load_files, num_epoch=200, training_data_dir="processed/melspectrogram/"):
+    def __init__(self, generator, load_files, num_epoch=200):
         self.generator = generator
         self.load_files = load_files
         self.num_epoch = num_epoch
-        self.training_data_dir = training_data_dir
 
 
 def calculate_and_dump_lwlrap_per_class(test_file_names, y_test, y_pred, current_fold):
@@ -71,7 +70,7 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
 
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
 
-        train_generator = train_config.generator(x_train, y_train, batch_size=32, directory=train_config.training_data_dir)
+        train_generator = train_config.generator(x_train, y_train, batch_size=32)
         x, y = train_generator[0]
         max_row = x[0].shape[0]
         max_column = x[0].shape[1]
@@ -80,7 +79,7 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
         input_shape = (max_row, max_column, max_depth)
         print("Training shape: ", (max_row, max_column, max_depth))
 
-        x_val = train_config.load_files(x_val, directory=train_config.training_data_dir)
+        x_val = train_config.load_files(x_val)
 
         # create 2d conv model
         model = create_model_simplecnn(input_shape, num_classes)
@@ -90,21 +89,19 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
 
         callbacks = [
             EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=5),
-            tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
-                                               monitor='val_tf_lwlrap', verbose=1, save_best_only=True, mode='max')
+            # tf.keras.callbacks.ModelCheckpoint('./models/best_{}.h5'.format(current_fold),
+            #                                    monitor='val_tf_lwlrap', verbose=1, save_best_only=True, mode='max')
         ]
 
-        model.fit_generator(train_generator,
-                            epochs=train_config.num_epoch,
-                            callbacks=callbacks,
+        model.fit_generator(train_generator, epochs=train_config.num_epoch, callbacks=callbacks,
                             validation_data=(x_val, y_val))
 
-        test_generator = train_config.generator(x_test, y_test, directory=train_config.training_data_dir)
+        test_generator = train_config.generator(x_test, y_test)
         y_pred = model.predict_generator(test_generator)
         lwlrap = calculate_overall_lwlrap_sklearn(y_test, y_pred)
         print("Fold {} Score: {}".format(current_fold, lwlrap))
 
-        calculate_and_dump_lwlrap_per_class(x_test, y_test, y_pred, current_fold)
+        # calculate_and_dump_lwlrap_per_class(x_test, y_test, y_pred, current_fold)
 
         current_fold += 1
         fold_scores.append(lwlrap)
@@ -114,17 +111,14 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
 
 
 def train():
-    train_curated = pd.read_csv("data/train_noisy.csv")
+    train_curated = pd.read_csv("data/train_curated.csv")
     file_names = train_curated['fname']
     labels = train_curated['labels'].str.get_dummies(sep=',')
-    file_names = np.array([file_name + ".pickle" for file_name in file_names])
+    file_paths = np.array(["processed/melspectrogram/" + file_name + ".pickle" for file_name in file_names])
 
-    train_config = TrainingConfiguration(
-        MelDataGenerator,
-        load_melspectrogram_files,
-        training_data_dir="processed/melspectrogram_noisy/")
+    train_config = TrainingConfiguration(MelDataGenerator, load_melspectrogram_files, num_epoch=5)
 
-    kfold_validation(train_config, file_names, labels)
+    kfold_validation(train_config, file_paths, labels)
 
 
 if __name__ == "__main__":

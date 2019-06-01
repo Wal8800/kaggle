@@ -3,24 +3,21 @@ import numpy as np
 import pandas as pd
 import librosa
 
-from process_audio_data import MelSpectrogramBuilder
-
 
 # https://github.com/Cocoxili/DCASE2018Task2
 class MelDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, fnames, labels, directory="processed/melspectrogram/", batch_size=32):
-        self.fnames = fnames
+    def __init__(self, file_paths, labels, batch_size=32):
+        self.file_paths = file_paths
         self.labels = labels
         self.batch_size = batch_size
-        self.directory = directory
 
     def __len__(self):
-        return int(np.ceil(len(self.fnames) / float(self.batch_size)))
+        return int(np.ceil(len(self.file_paths) / float(self.batch_size)))
 
     def __getitem__(self, idx):
-        batch_x = self.fnames[idx * self.batch_size:(idx + 1) * self.batch_size]
-        data = [MelDataGenerator.augment_melspectrogram(np.load(self.directory + file_name, allow_pickle=True))
-                for file_name in batch_x]
+        batch_x = self.file_paths[idx * self.batch_size:(idx + 1) * self.batch_size]
+        data = [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+                for file_path in batch_x]
 
         if self.labels is None:
             return np.array(data)
@@ -37,9 +34,9 @@ class MelDataGenerator(tf.keras.utils.Sequence):
         return np.stack((logmel, delta, accelerate), axis=2)
 
 
-def load_melspectrogram_files(batch_x, directory="processed/melspectrogram/"):
-    data = [MelDataGenerator.augment_melspectrogram(np.load(directory + file_name, allow_pickle=True))
-            for file_name in batch_x]
+def load_melspectrogram_files(file_paths):
+    data = [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+            for file_path in file_paths]
     return np.array(data)
 
 
