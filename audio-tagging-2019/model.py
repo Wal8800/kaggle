@@ -113,7 +113,7 @@ def resnet_layer(inputs,
                   strides=strides,
                   padding='same',
                   kernel_initializer='he_normal',
-                  kernel_regularizer=l2(1e-4))
+                  kernel_regularizer=tf.keras.regularizers.l2(1e-4))
 
     x = inputs
     if conv_first:
@@ -197,9 +197,7 @@ def resnet_v1(input_shape, depth, num_classes):
     # v1 does not use BN after last shortcut connection-ReLU
     x = AveragePooling2D(pool_size=8)(x)
     y = Flatten()(x)
-    outputs = Dense(num_classes,
-                    activation='softmax',
-                    kernel_initializer='he_normal')(y)
+    outputs = Dense(num_classes, activation='linear',)(y)
 
     # Instantiate model.
     model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
@@ -207,7 +205,5 @@ def resnet_v1(input_shape, depth, num_classes):
 
 
 if __name__ == "__main__":
-    model = simple_2d_conv((100, 100, 3), 10)
-    sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(loss='categorical_crossentropy', optimizer=sgd)
-    print(model.summary())
+    model = create_model_simplecnn((64, 200, 3), 80)
+    model.summary()

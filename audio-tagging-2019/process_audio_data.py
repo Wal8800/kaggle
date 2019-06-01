@@ -72,9 +72,6 @@ class MelSpectrogramBuilder:
             print(fname)
             raise error
 
-        # trim silence
-        y, index = librosa.effects.trim(y)
-
         s = librosa.feature.melspectrogram(
             y=y,
             sr=sr,
@@ -137,11 +134,18 @@ class MFCCBuilder:
         plt.show()
 
 
-def process_and_save_logmel(row):
+def process_and_save_logmel_train_curated(row):
     fname = row[1][0]
     builder = MelSpectrogramBuilder()
     padded_melspec = builder.generate_padded_log_melspectrogram("data/train_curated/", fname)
     padded_melspec.dump("processed/melspectrogram/" + fname + ".pickle")
+
+
+def process_and_save_logmel_train_noisy(row):
+    fname = row[1][0]
+    builder = MelSpectrogramBuilder()
+    padded_melspec = builder.generate_padded_log_melspectrogram("data/train_noisy/", fname)
+    padded_melspec.dump("processed/melspectrogram_noisy/" + fname + ".pickle")
 
 
 def process_and_save_mfccs(row):
@@ -253,12 +257,24 @@ def create_file_name_and_label_list():
     print(labels.shape)
 
 
+def generate_train_curated():
+    start_time = time.time()
+    train_curated = pd.read_csv('data/train_curated.csv')
+    generate_and_save_to_directory(train_curated, process_and_save_logmel_train_curated)
+    print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
+
+
+def generate_train_noisy():
+    start_time = time.time()
+    train_noisy = pd.read_csv('data/train_noisy.csv')
+    generate_and_save_to_directory(train_noisy, process_and_save_logmel_train_noisy)
+    print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
+
+
 if __name__ == "__main__":
-    # start_time = time.time()
-    # train_curated = pd.read_csv('data/train_curated.csv')
-    # generate_and_save_to_directory(train_curated, process_augment_save_logmel)
-    # print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
-    check_for_silence()
+    generate_train_curated()
+
+
 
 
 
