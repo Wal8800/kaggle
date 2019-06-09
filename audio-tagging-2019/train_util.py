@@ -1,6 +1,7 @@
 import numpy as np
 import sklearn.metrics
 import tensorflow as tf
+import keras
 
 
 def lr_schedule(epoch):
@@ -41,7 +42,7 @@ def calculate_overall_lwlrap_sklearn(truth, scores):
     return overall_lwlrap
 
 
-class EarlyStoppingByLWLRAP(tf.keras.callbacks.Callback):
+class EarlyStoppingByLWLRAP(keras.callbacks.Callback):
     def __init__(self, validation_data=None, patience=0, verbose=0, min_delta=0, restore_best_weights=False):
         self.patience = patience
         self.verbose = verbose
@@ -92,7 +93,7 @@ class EarlyStoppingByLWLRAP(tf.keras.callbacks.Callback):
 
 # https://www.kaggle.com/ratthachat/fat19-keras-baseline-on-preprocesseddata-lb576/notebook
 def bce_with_logits(y_true, y_pred):
-    return tf.keras.backend.mean(tf.keras.backend.binary_crossentropy(y_true, y_pred, from_logits=True), axis=-1)
+    return keras.backend.mean(keras.backend.binary_crossentropy(y_true, y_pred, from_logits=True), axis=-1)
 
 
 # https://www.kaggle.com/rio114/keras-cnn-with-lwlrap-evaluation/comments

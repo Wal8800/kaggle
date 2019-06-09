@@ -1,7 +1,6 @@
 import librosa
 import pandas as pd
 import numpy as np
-import dask.dataframe as dd
 import time
 import natural.date
 from multiprocessing import Pool
@@ -12,14 +11,16 @@ from os import listdir
 from os.path import isfile, join
 
 
-def padded_2d_array(two_dim_array, target_frame_length):
+def padded_2d_array(two_dim_array, target_frame_length, random_starting_offset=True):
     two_dim_array = two_dim_array.reshape((two_dim_array.shape[0], two_dim_array.shape[1], 1))
-    # print(logmel.shape)
-    # input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
+
     # Random offset / Padding
     if two_dim_array.shape[1] > target_frame_length:
         max_offset = two_dim_array.shape[1] - target_frame_length
-        offset = np.random.randint(max_offset)
+        if random_starting_offset:
+            offset = np.random.randint(max_offset)
+        else:
+            offset = 0
         data = two_dim_array[:, offset:(target_frame_length + offset), :]
     else:
         if target_frame_length > two_dim_array.shape[1]:
@@ -33,7 +34,8 @@ def padded_2d_array(two_dim_array, target_frame_length):
 
 
 class MelSpectrogramBuilder:
-    def __init__(self, frame_weight=80, frame_shift=10, n_mels=64, sampling_rate=44100, audio_duration=2):
+    def __init__(self, frame_weight=80, frame_shift=10, n_mels=64, sampling_rate=44100, audio_duration=2,
+                 random_starting_offset=True):
         self.n_fft = int(frame_weight / 1000 * sampling_rate)
         self.n_mels = n_mels
         self.fmin = 20
@@ -43,27 +45,8 @@ class MelSpectrogramBuilder:
         self.hop_length = int(frame_shift / 1000 * sampling_rate)
         self.sampling_rate = sampling_rate
         self.audio_duration = audio_duration
-
-    def generate_padded_melspec_df_pickle(self, df, column_name, file_name):
-        melspec = self._get_melspec_from_dataframe(df, column_name)
-        melspec_df = pd.DataFrame(
-            {
-                'mel_spectrogram': melspec,
-                'labels': df['labels'],
-                'fname': df['fname']
-            }
-        )
-        melspec_df.to_pickle(file_name)
-
-    def _get_melspec_from_dataframe(self, dataframe, column_name):
-        ddata = dd.from_pandas(dataframe, npartitions=3)
-        res = ddata.map_partitions(
-            lambda df: df.apply(
-                (lambda row: self.generate_padded_log_melspectrogram('data/train_curated/', row[column_name])),
-                axis=1),
-            meta=(None, 'f8')).compute(scheduler='threads')
-
-        return res
+        self.input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
+        self.random_starting_offset = random_starting_offset
 
     def generate_log_melspectrogram(self, directory, fname):
         try:
@@ -72,19 +55,21 @@ class MelSpectrogramBuilder:
             print(fname)
             raise error
 
+        y, index = librosa.effects.trim(y, hop_length=self.hop_length)
         s = librosa.feature.melspectrogram(
             y=y,
             sr=sr,
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             n_mels=self.n_mels,
+            fmin=self.fmin,
+            fmax=self.fmax
         )
         return librosa.power_to_db(s)
 
     def generate_padded_log_melspectrogram(self, directory, fname):
         logmel = self.generate_log_melspectrogram(directory, fname)
-        input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
-        return padded_2d_array(logmel, input_frame_length)
+        return padded_2d_array(logmel, self.input_frame_length, self.random_starting_offset)
 
     def generate_padded_log_melspectrogram_from_wave(self, y, sr):
         s = librosa.feature.melspectrogram(
@@ -93,10 +78,11 @@ class MelSpectrogramBuilder:
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             n_mels=self.n_mels,
+            fmin=self.fmin,
+            fmax=self.fmax
         )
         logmel = librosa.power_to_db(s)
-        input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
-        return padded_2d_array(logmel, input_frame_length)
+        return padded_2d_array(logmel, self.input_frame_length)
 
 
 class MFCCBuilder:
@@ -136,9 +122,9 @@ class MFCCBuilder:
 
 def process_and_save_logmel_train_curated(row):
     fname = row[1][0]
-    builder = MelSpectrogramBuilder()
+    builder = MelSpectrogramBuilder(random_starting_offset=False)
     padded_melspec = builder.generate_padded_log_melspectrogram("data/train_curated/", fname)
-    padded_melspec.dump("processed/melspectrogram/" + fname + ".pickle")
+    padded_melspec.dump("processed/melspectrogram_zero_offset/" + fname + ".pickle")
 
 
 def process_and_save_logmel_train_noisy(row):
@@ -146,6 +132,34 @@ def process_and_save_logmel_train_noisy(row):
     builder = MelSpectrogramBuilder()
     padded_melspec = builder.generate_padded_log_melspectrogram("data/train_noisy/", fname)
     padded_melspec.dump("processed/melspectrogram_noisy/" + fname + ".pickle")
+
+
+# https://www.kaggle.com/daisukelab/fat2019_prep_mels1
+def create_preprocessed_mel_builder():
+    builder = MelSpectrogramBuilder()
+    builder.sampling_rate = 44100
+    builder.audio_duration = 2
+    builder.hop_length = 347 * builder.audio_duration
+    builder.fmin = 20
+    builder.fmax = builder.sampling_rate // 2
+    builder.n_mels = 128
+    builder.n_fft = builder.n_mels * 28
+    builder.input_frame_length = 128
+    return builder
+
+
+def process_and_save_logmel_train_curated_128(row):
+    fname = row[1][0]
+    builder = create_preprocessed_mel_builder()
+    padded_melspec = builder.generate_padded_log_melspectrogram("data/train_curated/", fname)
+    padded_melspec.dump("processed/melspectrogram_128/" + fname + ".pickle")
+
+
+def process_and_save_logmel_train_noisy_128(row):
+    fname = row[1][0]
+    builder = create_preprocessed_mel_builder()
+    padded_melspec = builder.generate_padded_log_melspectrogram("data/train_noisy/", fname)
+    padded_melspec.dump("processed/melspectrogram_noisy_128/" + fname + ".pickle")
 
 
 def process_and_save_mfccs(row):
@@ -205,58 +219,6 @@ def trim_silence(fname):
     return [fname, diff]
 
 
-def split_on_silence(fname):
-    y, sr = librosa.load("data/train_curated/" + fname)
-    y_arr = librosa.effects.split(y)
-    return [fname, len(y_arr)]
-
-
-def check_for_silence():
-    train_curated = pd.read_csv("data/train_curated.csv")
-    file_names = train_curated["fname"]
-
-    with Pool(4) as p:
-        rows = list(tqdm.tqdm(p.imap(split_on_silence, file_names), total=len(file_names)))
-
-        df = pd.DataFrame(columns=['fname', 'diff'])
-        for row in rows:
-            df.loc[len(df)] = row
-
-        df = df.sort_values(by="diff", ascending=False)
-        print(df.head())
-        df.to_csv("trim_silence.csv", index=False)
-
-
-def extract_original_file_name(augmented_fname):
-    return ".".join(augmented_fname.split(".", 2)[:2])
-
-
-def create_file_name_and_label_list():
-    augmented_dir = "processed/augmented_melspectrogram/"
-    files = [f for f in listdir(augmented_dir) if isfile(join(augmented_dir, f))]
-    print(len(files))
-    print(files[:5])
-
-    train_curated = pd.read_csv("data/train_curated.csv")
-    augmented_labels = [train_curated[train_curated['fname'] == extract_original_file_name(file_name)]["labels"].values[0]
-                        for file_name in files]
-    print(len(augmented_labels))
-    print(augmented_labels[:5])
-
-    temp = pd.DataFrame(
-        {
-            'labels': augmented_labels
-        }
-    )
-
-    dummies_label = temp['labels'].str.get_dummies(sep=',')
-    print(dummies_label.shape)
-    print(dummies_label.head())
-
-    labels = train_curated['labels'].str.get_dummies(sep=',')
-    print(labels.shape)
-
-
 def generate_train_curated():
     start_time = time.time()
     train_curated = pd.read_csv('data/train_curated.csv')
@@ -271,8 +233,31 @@ def generate_train_noisy():
     print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
 
 
+def check_number_of_sample_duration():
+    train_curated = pd.read_csv('data/train_curated.csv')
+    tc_count = 0
+    for file_name in train_curated['fname'].values:
+        duration = librosa.get_duration(filename="data/train_curated/" + file_name)
+        if duration > 4:
+            tc_count += 1
+
+    print("Number of train curated sample with greater 2 second duration:", tc_count)
+    print("Total train_curated sample count:", len(train_curated['fname'].values))
+
+    test = pd.read_csv('data/sample_submission.csv')
+    test_count = 0
+    for file_name in test['fname'].values:
+        duration = librosa.get_duration(filename="data/test/" + file_name)
+        if duration > 4:
+            test_count += 1
+
+    print("Number of test sample with greater 2 second duration:", test_count)
+    print("Total train_curated sample count:", len(test['fname'].values))
+
+
 if __name__ == "__main__":
     generate_train_curated()
+
 
 
 

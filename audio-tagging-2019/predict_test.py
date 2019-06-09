@@ -1,17 +1,56 @@
-import tensorflow as tf
 import pandas as pd
 import numpy as np
 import librosa
-import dask.dataframe as dd
-from multiprocessing import Pool
 import tqdm
 import time
 import os
 import shutil
+import random
+import keras
+import tensorflow as tf
 
+from imgaug import augmenters as iaa
+from multiprocessing import Pool
+
+in_kaggle = False
 pickle_dir = "processed/test_melspectrogram/"
-# test_data_dir = "../input/freesound-audio-tagging-2019/test/"
-test_data_dir = "data/test/"
+
+if in_kaggle:
+    test_data_dir = "../input/freesound-audio-tagging-2019/test/"
+else:
+    test_data_dir = "data/test/"
+
+
+def mix_up(x, y):
+    x = np.array(x, np.float32)
+    lam = np.random.beta(1.0, 1.0)
+    ori_index = np.arange(int(len(x)))
+    index_array = np.arange(int(len(x)))
+    np.random.shuffle(index_array)
+
+    mixed_x = lam * x[ori_index] + (1 - lam) * x[index_array]
+    mixed_y = lam * y[ori_index] + (1 - lam) * y[index_array]
+
+    return mixed_x, mixed_y
+
+
+def padded_2d_array(two_dim_array, target_frame_length):
+    two_dim_array = two_dim_array.reshape((two_dim_array.shape[0], two_dim_array.shape[1], 1))
+
+    # Random offset / Padding
+    if two_dim_array.shape[1] > target_frame_length:
+        max_offset = two_dim_array.shape[1] - target_frame_length
+        offset = np.random.randint(max_offset)
+        data = two_dim_array[:, offset:(target_frame_length + offset), :]
+    else:
+        if target_frame_length > two_dim_array.shape[1]:
+            max_offset = target_frame_length - two_dim_array.shape[1]
+            offset = np.random.randint(max_offset)
+        else:
+            offset = 0
+        data = np.pad(two_dim_array, ((0, 0), (offset, target_frame_length - two_dim_array.shape[1] - offset), (0, 0)),
+                      "constant")
+    return data
 
 
 class MelSpectrogramBuilder:
@@ -25,27 +64,7 @@ class MelSpectrogramBuilder:
         self.hop_length = int(frame_shift / 1000 * sampling_rate)
         self.sampling_rate = sampling_rate
         self.audio_duration = audio_duration
-
-    def generate_padded_melspec_df_pickle(self, df, colunmn_name, file_name):
-        melspec = self._get_melspec_from_dataframe(df, colunmn_name)
-        melspec_df = pd.DataFrame(
-            {
-                'mel_spectrogram': melspec,
-                'labels': df['labels'],
-                'fname': df['fname']
-            }
-        )
-        melspec_df.to_pickle(file_name)
-
-    def _get_melspec_from_dataframe(self, dataframe, column_name):
-        ddata = dd.from_pandas(dataframe, npartitions=3)
-        res = ddata.map_partitions(
-            lambda df: df.apply(
-                (lambda row: self.generate_padded_log_melspectrogram('data/train_curated/', row[column_name])),
-                axis=1),
-            meta=(None, 'f8')).compute(scheduler='threads')
-
-        return res
+        self.input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
 
     def generate_log_melspectrogram(self, directory, fname):
         try:
@@ -54,36 +73,34 @@ class MelSpectrogramBuilder:
             print(fname)
             raise error
 
+        y, index = librosa.effects.trim(y, hop_length=self.hop_length)
         s = librosa.feature.melspectrogram(
             y=y,
             sr=sr,
             n_fft=self.n_fft,
             hop_length=self.hop_length,
             n_mels=self.n_mels,
+            fmin=self.fmin,
+            fmax=self.fmax
         )
         return librosa.power_to_db(s)
 
     def generate_padded_log_melspectrogram(self, directory, fname):
         logmel = self.generate_log_melspectrogram(directory, fname)
-        return self._padded_logmel(logmel)
+        return padded_2d_array(logmel, self.input_frame_length)
 
-    def _padded_logmel(self, logmel):
-        logmel = logmel.reshape((logmel.shape[0], logmel.shape[1], 1))
-        # print(logmel.shape)
-        input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
-        # Random offset / Padding
-        if logmel.shape[1] > input_frame_length:
-            max_offset = logmel.shape[1] - input_frame_length
-            offset = np.random.randint(max_offset)
-            data = logmel[:, offset:(input_frame_length + offset), :]
-        else:
-            if input_frame_length > logmel.shape[1]:
-                max_offset = input_frame_length - logmel.shape[1]
-                offset = np.random.randint(max_offset)
-            else:
-                offset = 0
-            data = np.pad(logmel, ((0, 0), (offset, input_frame_length - logmel.shape[1] - offset), (0, 0)), "constant")
-        return data
+    def generate_padded_log_melspectrogram_from_wave(self, y, sr):
+        s = librosa.feature.melspectrogram(
+            y=y,
+            sr=sr,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            n_mels=self.n_mels,
+            fmin=self.fmin,
+            fmax=self.fmax
+        )
+        logmel = librosa.power_to_db(s)
+        return padded_2d_array(logmel, self.input_frame_length)
 
 
 def process_and_save_logmel_test(row):
@@ -98,28 +115,54 @@ def generate_and_save_to_directory_test(df: pd.DataFrame):
         r = list(tqdm.tqdm(p.imap(process_and_save_logmel_test, df.iterrows()), total=len(df)))
 
 
+augmentation_list = [
+    iaa.Fliplr(0.5),
+    # iaa.CoarseDropout(0.12, size_percent=0.05)
+]
+image_augmentation = iaa.Sequential(augmentation_list, random_order=True)
+
+
 # https://github.com/Cocoxili/DCASE2018Task2
-class MelDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, fnames, directory, labels=None, batch_size=32):
-        self.fnames = fnames
+class MelDataGenerator(keras.utils.Sequence):
+    def __init__(self, file_paths, labels=None, batch_size=32, mixup=False, image_aug=False):
+        self.file_paths = file_paths
         self.labels = labels
         self.batch_size = batch_size
-        self.directory = directory
+        self.mixup = mixup
+        self.image_aug = image_aug
 
     def __len__(self):
-        return int(np.ceil(len(self.fnames) / float(self.batch_size)))
+        return int(np.ceil(len(self.file_paths) / float(self.batch_size)))
 
     def __getitem__(self, idx):
-        batch_x = self.fnames[idx * self.batch_size:(idx + 1) * self.batch_size]
-        data = [
-            MelDataGenerator.augment_melspectrogram(np.load(self.directory + file_name + ".pickle", allow_pickle=True))
-            for file_name in batch_x]
+        batch_x = self.file_paths[idx * self.batch_size:(idx + 1) * self.batch_size]
+        data = np.array(
+            [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+                for file_path in batch_x]
+        )
+
+        if self.image_aug:
+            data = image_augmentation(images=data)
 
         if self.labels is None:
-            return np.array(data)
-        else:
-            batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
-            return np.array(data), np.array(batch_y)
+            return data
+
+        batch_y = np.array(self.labels[idx * self.batch_size:(idx + 1) * self.batch_size])
+        if self.mixup and random.uniform(0, 1) < 0.25:
+            data, batch_y = mix_up(data, batch_y)
+
+            # random_indice = np.random.choice(len(self.file_paths), len(batch_x))
+            # batch_x_2 = np.array(
+            #     [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+            #         for file_path in self.file_paths[random_indice]]
+            # )
+            # if isinstance(self.labels, pd.Series):
+            #     batch_y_2 = self.labels.values[random_indice]
+            # else:
+            #     batch_y_2 = self.labels[random_indice]
+            # data, batch_y = mix_up_8th(data, batch_y, batch_x_2, batch_y_2)
+
+        return data, batch_y
 
     @staticmethod
     def augment_melspectrogram(logmel):
@@ -212,30 +255,33 @@ def tf_lwlrap(y_true, y_pred):
 
 
 def bce_with_logits(y_true, y_pred):
-    return tf.keras.backend.mean(tf.keras.backend.binary_crossentropy(y_true, y_pred, from_logits=True), axis=-1)
+    return keras.backend.mean(keras.backend.binary_crossentropy(y_true, y_pred, from_logits=True), axis=-1)
 
 
 def predict():
     if not os.path.exists(pickle_dir):
         os.makedirs(pickle_dir)
 
-    input_dir = "data/"
-    # input_dir = "../input/freesound-audio-tagging-2019/"
+    if in_kaggle:
+        input_dir = "../input/freesound-audio-tagging-2019/"
+        model_dir = "../input/initial-model-for-audio-2019/"
+    else:
+        input_dir = "data/"
+        model_dir = "models/"
+
+        keras.backend.clear_session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        keras.backend.set_session(tf.Session(config=config))
+
     test = pd.read_csv(input_dir + "sample_submission.csv")
+    test_file_paths = np.array(["processed/test_melspectrogram/" + file_name + ".pickle" for file_name in test['fname']])
     generate_and_save_to_directory_test(test)
 
-    # model_dir = "../input/initial-model-for-audio-2019/"
-    model_dir = "models/"
-
-    tf.keras.backend.clear_session()
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.keras.backend.set_session(tf.Session(config=config))
-
     fold_prediction = []
-    for fold in range(3):
-        test_generator = MelDataGenerator(test["fname"], directory=pickle_dir)
-        loaded_model = tf.keras.models.load_model(model_dir + "best_{}.h5".format((fold + 1)),
+    for fold in range(1):
+        test_generator = MelDataGenerator(test_file_paths)
+        loaded_model = keras.models.load_model(model_dir + "best_{}.h5".format((fold + 1)),
                                                   custom_objects={
                                                       'bce_with_logits': bce_with_logits,
                                                       'tf_lwlrap': tf_lwlrap
