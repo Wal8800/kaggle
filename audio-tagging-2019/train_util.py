@@ -2,6 +2,7 @@ import numpy as np
 import sklearn.metrics
 import tensorflow as tf
 import keras
+import pandas as pd
 
 
 def lr_schedule(epoch):
@@ -253,3 +254,31 @@ def calculate_per_class_lwlrap(truth, scores):
     #           also = weighted mean of per-class lwlraps, weighted by class label prior across samples
     #                = np.sum(per_class_lwlrap * weight_per_class)
     return per_class_lwlrap, weight_per_class
+
+
+def calculate_and_dump_lwlrap_per_class(test_file_path, y_test, y_pred, output_file_name):
+    x_test_fname = np.array([fname[fname.rfind("/")+1:-7] for fname in test_file_path])
+    train_curated = pd.read_csv('data/train_curated.csv')
+    train_noisy = pd.read_csv('data/train_noisy.csv')
+    single_train = pd.concat([train_curated, train_noisy])
+    filter_train_curated = single_train[single_train.fname.isin(x_test_fname)]
+
+    labels_count = filter_train_curated['labels'].str.split(expand=True, pat=",").stack().value_counts()
+    labels_count = labels_count.reset_index()
+    labels_count.columns = ['class_name', 'sample_count']
+
+    # getting class name
+    test = pd.read_csv('data/sample_submission.csv')
+    class_names = test.columns[1:]
+
+    per_class_lwlrap, weight_per_class = calculate_per_class_lwlrap(y_test, y_pred)
+    per_class_lwlrap_df = pd.DataFrame(
+        {
+            'class_name': class_names,
+            'lwlrap': per_class_lwlrap,
+            'weighting': weight_per_class
+        }
+    )
+    per_class_lwlrap_df = per_class_lwlrap_df.join(labels_count.set_index('class_name'), on='class_name')
+    per_class_lwlrap_df.to_csv(output_file_name, index=False)
+    print(per_class_lwlrap_df.head())
