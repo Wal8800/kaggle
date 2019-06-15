@@ -1,7 +1,6 @@
 import keras
 import numpy as np
 import librosa
-import random
 
 
 # https://github.com/Cocoxili/DCASE2018Task2
