@@ -38,8 +38,8 @@ class MelDataGenerator(keras.utils.Sequence):
 
         return np.stack((logmel, delta, accelerate), axis=2)
 
-    @staticmethod
-    def load_files(file_paths):
-        data = [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
-                for file_path in file_paths]
-        return np.array(data)
+
+def load_melspectrogram_files(file_paths):
+    data = [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+            for file_path in file_paths]
+    return np.array(data)

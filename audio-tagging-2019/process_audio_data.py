@@ -138,21 +138,21 @@ def process_and_save_logmel_train_noisy(row):
 def create_preprocessed_mel_builder():
     builder = MelSpectrogramBuilder()
     builder.sampling_rate = 44100
-    builder.audio_duration = 2
+    builder.audio_duration = 3
     builder.hop_length = 347 * builder.audio_duration
     builder.fmin = 20
     builder.fmax = builder.sampling_rate // 2
     builder.n_mels = 128
     builder.n_fft = builder.n_mels * 28
-    builder.input_frame_length = 128
+    builder.input_frame_length = 64 * builder.audio_duration
     return builder
 
 
-def process_and_save_logmel_train_curated_128(row):
+def process_and_save_logmel_train_curated_192(row):
     fname = row[1][0]
     builder = create_preprocessed_mel_builder()
     padded_melspec = builder.generate_padded_log_melspectrogram("data/train_curated/", fname)
-    padded_melspec.dump("processed/melspectrogram_128/" + fname + ".pickle")
+    padded_melspec.dump("processed/melspectrogram_192/" + fname + ".pickle")
 
 
 def process_and_save_logmel_train_noisy_128(row):
@@ -222,7 +222,7 @@ def trim_silence(fname):
 def generate_train_curated():
     start_time = time.time()
     train_curated = pd.read_csv('data/train_curated.csv')
-    generate_and_save_to_directory(train_curated, process_and_save_logmel_train_curated)
+    generate_and_save_to_directory(train_curated, process_and_save_logmel_train_curated_192)
     print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
 
 

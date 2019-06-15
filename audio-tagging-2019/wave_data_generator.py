@@ -42,11 +42,10 @@ class WaveDataGenerator(keras.utils.Sequence):
         return y.reshape((1, self.samples))
 
 
-    @staticmethod
-    def load_wave_files(file_paths):
-        generator = WaveDataGenerator(file_paths)
-        data = [ generator.read_audio(file_path) for file_path in file_paths]
-        return np.array(data)
+def load_wave_files(file_paths):
+    generator = WaveDataGenerator(file_paths)
+    data = [ generator.read_audio(file_path) for file_path in file_paths]
+    return np.array(data)
 
 
 def test_generate_wave_files():
@@ -60,4 +59,4 @@ def test_generate_wave_files():
 
 
 if __name__ == "__main__":
-    test_generate_wave_files()
+    test_generate_mel_data_files()

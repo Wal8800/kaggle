@@ -6,7 +6,9 @@ import keras
 import os
 
 from model import create_model_simplecnn, create_model_cnn8th, create_model_resnet, create_model_inception, create_model_cnn_for_wave
-from data_loader import MelDataGenerator, load_melspectrogram_files, WaveDataGenerator, load_wave_files, load_melspectrogram_image_files, MelDataImageGenerator
+from mel_data_generator import MelDataGenerator
+from mel_image_data_generator import MelDataImageGenerator, load_melspectrogram_image_files
+from wave_data_generator import WaveDataGenerator, load_wave_files
 from sklearn.model_selection import KFold
 from natural import date
 from sklearn.model_selection import train_test_split
@@ -15,7 +17,7 @@ from train_util import calculate_overall_lwlrap_sklearn, EarlyStoppingByLWLRAP, 
 
 class TrainingConfiguration:
     def __init__(self, create_model_func, generator, load_files, num_epoch=200, use_mixup=False, use_img_aug=False,
-                 additional_train_data=None):
+                 additional_train_data=None, learning_rate=0.001, reduce_lr_patience=10, reduce_lr_factor=0.8):
         self.create_model_func = create_model_func
         self.generator = generator
         self.load_files = load_files
@@ -23,6 +25,9 @@ class TrainingConfiguration:
         self.use_mixup = use_mixup
         self.use_img_aug = use_img_aug
         self.additional_train_data = additional_train_data
+        self.learning_rate = learning_rate
+        self.reduce_lr_patience = reduce_lr_patience
+        self.reduce_lr_factor = reduce_lr_factor
 
 
 def get_lr_metric(optimizer):
@@ -79,21 +84,17 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
 
         x_val = train_config.load_files(x_val)
 
-        learning_rate = 0.001
-        reduce_lr_patience = 6
-        reduce_lr_factor = 0.8
-
         # create 2d conv model
         model = train_config.create_model_func(input_shape, num_classes)
-        opt = keras.optimizers.Adam(lr=learning_rate)
+        opt = keras.optimizers.Adam(lr=train_config.learning_rate)
         lr_metric = get_lr_metric(opt)
         model.compile(loss=bce_with_logits, optimizer=opt, metrics=[tf_lwlrap, lr_metric])
 
-        log_folder_name = './logs/200_fold_{}_{}_{}_{}_{}'.format(
+        log_folder_name = './logs/fold_{}_{}_{}_{}_{}'.format(
             current_fold,
-            learning_rate,
-            reduce_lr_patience,
-            reduce_lr_factor,
+            train_config.learning_rate,
+            train_config.reduce_lr_patience,
+            train_config.reduce_lr_factor,
             int(time.time())
         )
         os.mkdir(log_folder_name)
@@ -102,9 +103,9 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
                                         write_graph=True, write_grads=False, write_images=False, embeddings_freq=0,
                                         embeddings_layer_names=None, embeddings_metadata=None, embeddings_data=None,
                                         update_freq='epoch'),
-            # EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=20, restore_best_weights=True),
-            keras.callbacks.ReduceLROnPlateau(monitor='val_tf_lwlrap', patience=reduce_lr_patience, min_lr=1e-5,
-                                              factor=reduce_lr_factor, mode='max'),
+            EarlyStoppingByLWLRAP(validation_data=(x_val, y_val), patience=20, restore_best_weights=True),
+            keras.callbacks.ReduceLROnPlateau(monitor='val_tf_lwlrap', patience=train_config.reduce_lr_patience,
+                                              min_lr=1e-5, factor=train_config.reduce_lr_factor, mode='max'),
             keras.callbacks.ModelCheckpoint('./models/best_image_{}.h5'.format(current_fold), monitor='val_tf_lwlrap', verbose=1, save_best_only=True, mode='max')
         ]
 
@@ -126,10 +127,10 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
     print("Time taken: {}".format(date.compress(time.time() - start_time)))
 
 
-def train():
+def train_image():
     train_curated = pd.read_csv("data/train_curated.csv")
     curated_labels = train_curated['labels'].str.get_dummies(sep=',')
-    file_paths = np.array(["processed/melspectrogram/" + file_name + ".pickle" for file_name in train_curated['fname']])
+    file_paths = np.array(["processed/melspectrogram_128/" + file_name + ".pickle" for file_name in train_curated['fname']])
 
     train_noisy = pd.read_csv("data/train_noisy.csv")
     noisy_class = [
@@ -151,12 +152,15 @@ def train():
         ["processed/melspectrogram_noisy_128/" + file_name + ".pickle" for file_name in filter_train_noisy['fname']])
 
     train_config = TrainingConfiguration(
-        create_model_resnet,
+        create_model_simplecnn,
         MelDataImageGenerator,
         load_melspectrogram_image_files,
         num_epoch=150,
         use_img_aug=True,
         use_mixup=True,
+        learning_rate=0.001,
+        reduce_lr_patience=7,
+        reduce_lr_factor=0.8
         # additional_train_data=(noisy_file_paths, filter_train_noisy_label)
     )
 
@@ -179,5 +183,5 @@ def train_wave():
 
 
 if __name__ == "__main__":
-    train()
+    train_image()
     # train_wave()

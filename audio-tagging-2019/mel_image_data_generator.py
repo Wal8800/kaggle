@@ -122,18 +122,18 @@ class MelDataImageGenerator(keras.utils.Sequence):
 
         batch_y = np.array(self.labels[idx * self.batch_size:(idx + 1) * self.batch_size])
         if self.mixup and random.uniform(0, 1) < 0.25:
-            data, batch_y = mix_up(data, batch_y)
+            # data, batch_y = mix_up(data, batch_y)
 
-            # random_indice = np.random.choice(len(self.file_paths), len(batch_x))
-            # batch_x_2 = np.array(
-            #     [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
-            #         for file_path in self.file_paths[random_indice]]
-            # )
-            # if isinstance(self.labels, pd.Series):
-            #     batch_y_2 = self.labels.values[random_indice]
-            # else:
-            #     batch_y_2 = self.labels[random_indice]
-            # data, batch_y = mix_up_8th(data, batch_y, batch_x_2, batch_y_2)
+            random_indice = np.random.choice(len(self.file_paths), len(batch_x))
+            batch_x_2 = np.array(
+                [MelDataImageGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+                    for file_path in self.file_paths[random_indice]]
+            )
+            if isinstance(self.labels, pd.Series):
+                batch_y_2 = self.labels.values[random_indice]
+            else:
+                batch_y_2 = self.labels[random_indice]
+            data, batch_y = mix_up_8th(data, batch_y, batch_x_2, batch_y_2)
 
         return data, batch_y
 
@@ -144,11 +144,11 @@ class MelDataImageGenerator(keras.utils.Sequence):
             logmel = logmel.reshape((logmel.shape[0], logmel.shape[1]))
         return mono_to_color(logmel)
 
-    @staticmethod
-    def load_files(file_paths):
-        data = [MelDataImageGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
-                for file_path in file_paths]
-        return np.array(data)
+
+def load_melspectrogram_image_files(file_paths):
+    data = [MelDataImageGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
+            for file_path in file_paths]
+    return np.array(data)
 
 
 def test_generate_mel_data_files():
@@ -166,7 +166,7 @@ def test_generate_mel_data_files():
     plt.imshow(x[0])
     plt.show()
 
-    x = MelDataImageGenerator.load_files(file_paths[:33])
+    x = load_melspectrogram_image_files(file_paths[:33])
     print(x.shape)
 
     plt.figure()

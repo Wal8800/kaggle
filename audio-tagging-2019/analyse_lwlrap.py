@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 
 from train_util import bce_with_logits, tf_lwlrap, calculate_per_class_lwlrap
-from data_loader import MelDataGenerator
+from mel_data_generator import MelDataGenerator
 
 pd.set_option('display.max_rows', 500)
 pd.set_option('display.max_columns', 500)
