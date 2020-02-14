@@ -94,7 +94,7 @@ image_augmentation = iaa.Sequential(augmentation_list, random_order=True)
 
 
 class MelDataImageGenerator(keras.utils.Sequence):
-    def __init__(self, file_paths: List[str], labels, batch_size=32, mixup=False, image_aug=False):
+    def __init__(self, file_paths: List[str], labels, batch_size=32, mixup=True, image_aug=True):
         self.file_paths = file_paths
         self.labels = labels
         self.batch_size = batch_size

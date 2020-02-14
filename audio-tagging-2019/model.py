@@ -35,7 +35,7 @@ def create_model_simplecnn(input_shape, num_classes):
     x = Dense(128, activation='linear')(x)
     x = PReLU()(x)
     x = BatchNormalization()(x)
-    x = Dropout(0.1)(x)
+    x = Dropout(0.2)(x)
     predictions = Dense(num_classes, activation='linear')(x)
 
     return keras.models.Model(inputs=inp, outputs=predictions)

@@ -3,12 +3,11 @@ import pandas as pd
 import numpy as np
 import time
 import natural.date
-from multiprocessing import Pool
+import random
 import tqdm
-import matplotlib.pyplot as plt
 import librosa.display
-from os import listdir
-from os.path import isfile, join
+
+from multiprocessing import Pool
 
 
 def padded_2d_array(two_dim_array, target_frame_length, random_starting_offset=True):
@@ -48,7 +47,7 @@ class MelSpectrogramBuilder:
         self.input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
         self.random_starting_offset = random_starting_offset
 
-    def generate_log_melspectrogram(self, directory, fname):
+    def generate_log_melspectrogram(self, directory, fname, transform_wave_func=None):
         try:
             y, sr = librosa.load(directory + fname, sr=self.sampling_rate)
         except Exception as error:
@@ -56,6 +55,10 @@ class MelSpectrogramBuilder:
             raise error
 
         y, index = librosa.effects.trim(y, hop_length=self.hop_length)
+
+        if transform_wave_func is not None:
+            y = transform_wave_func(y, sr)
+
         s = librosa.feature.melspectrogram(
             y=y,
             sr=sr,
@@ -67,8 +70,8 @@ class MelSpectrogramBuilder:
         )
         return librosa.power_to_db(s)
 
-    def generate_padded_log_melspectrogram(self, directory, fname):
-        logmel = self.generate_log_melspectrogram(directory, fname)
+    def generate_padded_log_melspectrogram(self, directory, fname, transform_wave_func=None):
+        logmel = self.generate_log_melspectrogram(directory, fname, transform_wave_func)
         return padded_2d_array(logmel, self.input_frame_length, self.random_starting_offset)
 
     def generate_padded_log_melspectrogram_from_wave(self, y, sr):
@@ -83,41 +86,6 @@ class MelSpectrogramBuilder:
         )
         logmel = librosa.power_to_db(s)
         return padded_2d_array(logmel, self.input_frame_length)
-
-
-class MFCCBuilder:
-    def __init__(self, frame_weight=80, frame_shift=10, sampling_rate=44100, n_mfcc=64, audio_duration=2):
-        self.n_mfcc = n_mfcc
-        self.n_fft = int(frame_weight / 1000 * sampling_rate)
-        self.sampling_rate = sampling_rate
-        self.hop_length = int(frame_shift / 1000 * sampling_rate)
-        self.audio_duration = audio_duration
-        self.frame_weight = frame_weight
-        self.frame_shift = frame_shift
-
-    def generate_log_mfcc(self, directory, fname):
-        y, sr = librosa.load(directory + fname, sr=self.sampling_rate)
-        s = librosa.feature.mfcc(y=y,
-                                 sr=self.sampling_rate,
-                                 n_mfcc=self.n_mfcc,
-                                 n_fft=self.n_fft,
-                                 hop_length=self.hop_length)
-        return librosa.power_to_db(s)
-
-    def generate_padded_log_mfcc(self, directory, fname):
-        mfccs = self.generate_log_mfcc(directory, fname)
-        input_frame_length = int(self.audio_duration * 1000 / self.frame_shift)
-        return padded_2d_array(mfccs, input_frame_length)
-
-    def visualise_mfcc(self, mfccs):
-        plt.figure(figsize=(10, 4))
-        librosa.display.specshow(mfccs, x_axis='time',
-                                 sr=self.sampling_rate,
-                                 hop_length=self.hop_length)
-        plt.colorbar()
-        plt.title('MFCC')
-        plt.tight_layout()
-        plt.show()
 
 
 def process_and_save_logmel_train_curated(row):
@@ -162,47 +130,39 @@ def process_and_save_logmel_train_noisy_128(row):
     padded_melspec.dump("processed/melspectrogram_noisy_128/" + fname + ".pickle")
 
 
-def process_and_save_mfccs(row):
-    fname = row[1][0]
-    builder = MFCCBuilder()
-    padded_melspec = builder.generate_padded_log_mfcc("data/train_curated/", fname)
-    padded_melspec.dump("processed/mfccs/" + fname + ".pickle")
-
-
 # https://www.kaggle.com/huseinzol05/sound-augmentation-librosa#apply-hpss
 def process_augment_save_logmel(row):
-    output_dir = "processed/augmented_melspectrogram/"
+    output_dir = "processed/aug_melspectrogram/"
 
     fname = row[1][0]
     builder = MelSpectrogramBuilder()
 
-    y, sr = librosa.load("data/train_curated/" + fname, sr=builder.sampling_rate)
+    def transform_wave(y, sr):
 
-    y_trimmed, index = librosa.effects.trim(y)
-    trimmed_gram = builder.generate_padded_log_melspectrogram_from_wave(y_trimmed, sr)
-    trimmed_gram.dump(output_dir + fname + ".trimmed.pickle")
+        speed_changes = random.uniform(0, 1)
 
-    slow_changes = np.random.uniform(low=0.8, high=0.9)
-    slow = librosa.effects.time_stretch(y_trimmed, slow_changes)
-    slow_gram = builder.generate_padded_log_melspectrogram_from_wave(slow, sr)
-    slow_gram.dump(output_dir + fname + ".slow.pickle")
+        if speed_changes < 0.25:
+            slow_changes = np.random.uniform(low=0.8, high=0.9)
+            y = librosa.effects.time_stretch(y, slow_changes)
 
-    fast_changes = np.random.uniform(low=1.1, high=1.2)
-    fast = librosa.effects.time_stretch(y_trimmed, fast_changes)
-    fast_gram = builder.generate_padded_log_melspectrogram_from_wave(fast, sr)
-    fast_gram.dump(output_dir + fname + ".fast.pickle")
+        if 0.25 <= speed_changes < 0.5:
+            fast_changes = np.random.uniform(low=1.1, high=1.2)
+            y = librosa.effects.time_stretch(y, fast_changes)
 
-    noise_amp = 0.005 * np.random.uniform() * np.amax(y_trimmed)
-    y_noise = y_trimmed + noise_amp * np.random.normal(size=y_trimmed.shape[0])
-    noisy_gram = builder.generate_padded_log_melspectrogram_from_wave(y_noise, sr)
-    noisy_gram.dump(output_dir + fname + ".noisy.pickle")
+        if random.uniform(0, 1) < 0.25:
+            noise_amp = 0.005 * np.random.uniform() * np.amax(y)
+            y = y + noise_amp * np.random.normal(size=y.shape[0])
 
-    bins_per_octave = 12
-    pitch_pm = 2
-    pitch_change = pitch_pm * 2 * (np.random.uniform())
-    y_pitch = librosa.effects.pitch_shift(y_trimmed, sr, n_steps=pitch_change, bins_per_octave=bins_per_octave)
-    pitch_gram = builder.generate_padded_log_melspectrogram_from_wave(y_pitch, sr)
-    pitch_gram.dump(output_dir + fname + ".pitchy.pickle")
+        if random.uniform(0, 1) < 0.25:
+            bins_per_octave = 12
+            pitch_pm = 2
+            pitch_change = pitch_pm * 2 * (np.random.uniform())
+            y = librosa.effects.pitch_shift(y, sr, n_steps=pitch_change, bins_per_octave=bins_per_octave)
+
+        return y
+
+    padded_melspec = builder.generate_padded_log_melspectrogram("data/train_curated/", fname, transform_wave)
+    padded_melspec.dump(output_dir + fname + ".pickle")
 
 
 def generate_and_save_to_directory(df: pd.DataFrame, process_func):
@@ -210,19 +170,10 @@ def generate_and_save_to_directory(df: pd.DataFrame, process_func):
         r = list(tqdm.tqdm(p.imap(process_func, df.iterrows()), total=len(df)))
 
 
-def trim_silence(fname):
-    y, sr = librosa.load("data/train_curated/" + fname)
-    yt, index = librosa.effects.trim(y)
-
-    diff = abs(librosa.get_duration(y) - librosa.get_duration(yt))
-
-    return [fname, diff]
-
-
 def generate_train_curated():
     start_time = time.time()
     train_curated = pd.read_csv('data/train_curated.csv')
-    generate_and_save_to_directory(train_curated, process_and_save_logmel_train_curated_192)
+    generate_and_save_to_directory(train_curated, process_augment_save_logmel)
     print("Time taken: {}".format(natural.date.compress(time.time() - start_time)))
 
 
@@ -257,10 +208,3 @@ def check_number_of_sample_duration():
 
 if __name__ == "__main__":
     generate_train_curated()
-
-
-
-
-
-
-

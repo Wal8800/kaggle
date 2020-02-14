@@ -2,6 +2,13 @@ import keras
 import numpy as np
 import librosa
 
+from imgaug import augmenters as iaa
+
+augmentation_list = [
+    iaa.Fliplr(0.5),
+]
+image_augmentation = iaa.Sequential(augmentation_list, random_order=True)
+
 
 # https://github.com/Cocoxili/DCASE2018Task2
 class MelDataGenerator(keras.utils.Sequence):
@@ -21,6 +28,9 @@ class MelDataGenerator(keras.utils.Sequence):
             [MelDataGenerator.augment_melspectrogram(np.load(file_path, allow_pickle=True))
                 for file_path in batch_x]
         )
+
+        # 50% doing a horizontal flip
+        data = image_augmentation(images=data)
 
         if self.labels is None:
             return data

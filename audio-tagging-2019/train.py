@@ -5,6 +5,7 @@ import time
 import keras
 import os
 
+from datetime import datetime
 from sklearn.model_selection import KFold
 from natural import date
 from sklearn.model_selection import train_test_split
@@ -67,7 +68,7 @@ def create_log_dir(train_config):
         train_config.learning_rate,
         train_config.reduce_lr_patience,
         train_config.reduce_lr_factor,
-        int(time.time())
+        datetime.now().strftime("%d%m%y_%H%M%S")
     )
     os.mkdir(log_folder_name)
 
@@ -93,8 +94,7 @@ def kfold_validation(train_config: TrainingConfiguration, input_data, input_labe
             x_train = np.concatenate([x_train, train_config.additional_train_data[0]])
             y_train = np.concatenate([y_train, train_config.additional_train_data[1]])
 
-        train_generator = train_config.generator(x_train, y_train, batch_size=32, mixup=train_config.use_mixup,
-                                                 image_aug=train_config.use_img_aug)
+        train_generator = train_config.generator(x_train, y_train, batch_size=32)
         x, y = train_generator[0]
         input_shape = get_input_shape(x[0])
 
@@ -153,8 +153,6 @@ def train_image():
         MelDataImageGenerator,
         load_melspectrogram_image_files,
         num_epoch=150,
-        use_img_aug=True,
-        use_mixup=True,
         learning_rate=0.001,
         reduce_lr_patience=7,
         reduce_lr_factor=0.8,
@@ -167,7 +165,7 @@ def train_image():
 def train_raw_melspectrogram():
     train_curated = pd.read_csv("data/train_curated.csv")
     curated_labels = train_curated['labels'].str.get_dummies(sep=',')
-    file_paths = np.array(["processed/melspectrogram/" + file_name + ".pickle" for file_name in train_curated['fname']])
+    file_paths = np.array(["processed/aug_melspectrogram/" + file_name + ".pickle" for file_name in train_curated['fname']])
 
     train_config = TrainingConfiguration(
         create_model_simplecnn,
